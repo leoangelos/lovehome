@@ -234,6 +234,48 @@ function garantirLinkCadastro(
   return `${conteudo}\n\nAh — pra confirmar eu vou precisar do seu cadastro, leva dois minutinhos:\n${link}`
 }
 
+/**
+ * Rede de seguranca contra LINK INVENTADO.
+ *
+ * O modelo escreveu `https://www.lovehome.com.br/imovel/LH-1001` para um
+ * cliente — dominio e caminho que nunca existiram. Um link errado mandado pelo
+ * WhatsApp da imobiliaria e pior do que nenhum: parece phishing, e o cliente
+ * nao tem como saber que foi alucinacao.
+ *
+ * Toda URL legitima que um agente pode enviar nasce em algum lugar que o
+ * sistema controla: retorno de tool (link do imovel, boleto do Asaas), o link
+ * de cadastro gerado pelo proprio base-agent, ou o prompt. Uma URL na resposta
+ * que nao esteja em nenhuma dessas fontes e removida — e logada, para o trace
+ * mostrar que houve tentativa. O prompt pede a versao certa (`instrucao_links`
+ * na tool); isto e o que garante.
+ */
+const PADRAO_URL = /https?:\/\/[^\s<>"'`)\]]+/g
+
+export function removerLinksInventados(
+  conteudo: string,
+  fontesConfiaveis: string[]
+): { texto: string; removidos: string[] } {
+  const permitidas = new Set<string>()
+  for (const fonte of fontesConfiaveis) {
+    for (const url of fonte.match(PADRAO_URL) ?? []) permitidas.add(url.replace(/[.,;:!?]+$/, ''))
+  }
+
+  const removidos: string[] = []
+  const texto = conteudo.replace(PADRAO_URL, (url) => {
+    const limpa = url.replace(/[.,;:!?]+$/, '')
+    if (permitidas.has(limpa)) return url
+    removidos.push(limpa)
+    return ''
+  })
+
+  // Sem link sobra frase pendurada ("Aqui esta o link:") — limpa o rastro.
+  const arrumado = removidos.length
+    ? texto.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+    : texto
+
+  return { texto: arrumado, removidos }
+}
+
 const REGRAS_WHATSAPP = `
 
 REGRAS DE FORMATAÇÃO PARA WHATSAPP (obrigatório):
@@ -243,7 +285,9 @@ REGRAS DE FORMATAÇÃO PARA WHATSAPP (obrigatório):
 - NUNCA simule botões como [Ver imóvel] ou [Agendar visita]. WhatsApp não tem botões. Envie o link direto no texto.
 - NUNCA use asteriscos para negrito. Escreva de forma simples.
 - Links aparecem sozinhos numa linha, sem colchetes.
-- Ao apresentar imóveis, descreva em frases corridas, não em lista. Máximo 2 ou 3 opções por mensagem.`
+- Ao apresentar imóveis, descreva em frases corridas, não em lista. Máximo 2 ou 3 opções por mensagem.
+- LINKS: só envie URL que veio de uma ferramenta (campo link, foto_capa, link de cadastro, boleto). NUNCA escreva uma URL de memória nem "complete" um endereço — o sistema remove qualquer link que não tenha vindo de ferramenta.
+- FOTOS: se pedirem fotos de um imóvel, mande o link da página dele (abre com a galeria) ou a URL da foto de capa. Não diga que não consegue mostrar fotos.`
 
 /**
  * Executa um agente com laco de tool-calling.
@@ -442,11 +486,24 @@ export async function executeAgent(
     tokensSaida += response.usage?.completion_tokens ?? 0
   }
 
-  const assistantContent = garantirLinkCadastro(
+  /* Fontes de URL confiaveis desta rodada: tudo o que as tools devolveram, o
+     link de cadastro e o prompt de sistema. Qualquer outra URL e invencao. */
+  const fontesDeLink = [
+    ...toolCallTraces.map((t) => JSON.stringify(t.result ?? '')),
+    linkCadastro ?? '',
+    dbConfig.system_prompt,
+  ]
+  const semInventados = removerLinksInventados(
     response.choices[0].message.content ?? '',
-    linkCadastro,
-    history
+    fontesDeLink
   )
+  if (semInventados.removidos.length) {
+    console.warn(
+      `[${agentName}] link inventado removido da resposta: ${semInventados.removidos.join(', ')}`
+    )
+  }
+
+  const assistantContent = garantirLinkCadastro(semInventados.texto, linkCadastro, history)
   const totalDuration = Date.now() - startTime
 
   await registrarUso({

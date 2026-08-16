@@ -10,6 +10,7 @@
 import crypto from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type OpenAI from 'openai'
+import { urlPublica } from '@/lib/utils/url-publica'
 
 type Tool = OpenAI.ChatCompletionTool
 
@@ -239,6 +240,5 @@ export async function handleSubmitPropertyListing(
 export async function linkListagem(contactId: string): Promise<string | null> {
   const rascunho = await acharRascunho(contactId)
   if (!rascunho) return null
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-  return `${base}/listar-imovel/${rascunho.token}`
+  return urlPublica(`/listar-imovel/${rascunho.token}`)
 }

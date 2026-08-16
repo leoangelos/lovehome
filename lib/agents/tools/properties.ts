@@ -6,6 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { brl } from '@/lib/utils/format'
 import { reordenarPorSimilaridade } from '@/lib/imoveis/embeddings'
 import type OpenAI from 'openai'
+import { urlDoImovel } from '@/lib/utils/url-publica'
 
 type Tool = OpenAI.ChatCompletionTool
 
@@ -99,7 +100,7 @@ export async function handleSearchProperties(params: SearchParams) {
   let query = supabase
     .from('properties')
     .select(
-      'id, reference_code, title, property_type, region, bedrooms, bathrooms, parking_spots, area_m2, price_cents, rent_price_cents, condo_fee_cents, description'
+      'id, reference_code, title, property_type, region, bedrooms, bathrooms, parking_spots, area_m2, price_cents, rent_price_cents, condo_fee_cents, description, photos'
     )
     .eq('status', 'disponivel')
     .not(colunaPreco, 'is', null)
@@ -185,7 +186,21 @@ export async function handleSearchProperties(params: SearchParams) {
       preco: brl(params.operation === 'venda' ? p.price_cents : p.rent_price_cents),
       condominio: p.condo_fee_cents ? brl(p.condo_fee_cents) : null,
       descricao: p.description,
+      /* O link vem PRONTO da tool. Sem isto o modelo inventava um domínio
+         plausível (`www.lovehome.com.br/imovel/...`) e mandava para o cliente
+         — a mesma classe de erro do link de cadastro: o que tem consequência
+         não pode depender de o modelo lembrar. */
+      link: urlDoImovel(p.reference_code),
+      /* A capa é photos[0], no bucket público. O WhatsApp mostra a imagem
+         quando a URL vai na mensagem; a página do imóvel abre com a galeria. */
+      foto_capa: Array.isArray(p.photos) && p.photos.length ? p.photos[0] : null,
+      total_fotos: Array.isArray(p.photos) ? p.photos.length : 0,
     })),
+    instrucao_links:
+      'Ao citar um imóvel, use o campo `link` EXATAMENTE como veio — nunca escreva ou ' +
+      'adivinhe uma URL. Se pedirem fotos: com `total_fotos` > 0, envie o `link` (a página ' +
+      'abre com a galeria) ou a URL de `foto_capa`; com `total_fotos` = 0, diga que esse imóvel ' +
+      'ainda não tem fotos cadastradas e ofereça a visita — nunca diga que "não pode mostrar fotos".',
   }
 }
 

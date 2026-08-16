@@ -27,6 +27,7 @@
     "check:widget": "tsx scripts/check-widget.ts",
     "check:meta": "tsx scripts/check-meta.ts",
     "check:busca": "tsx scripts/check-busca.ts",
+    "check:links": "tsx scripts/check-links.ts",
     "check:rag": "tsx scripts/check-rag.ts",
     "check:conversas": "tsx scripts/check-conversas.ts",
     "check:painel": "tsx scripts/check-painel.ts",

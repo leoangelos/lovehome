@@ -9,6 +9,7 @@
 import crypto from 'node:crypto'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type OpenAI from 'openai'
+import { urlPublica } from '@/lib/utils/url-publica'
 
 type Tool = OpenAI.ChatCompletionTool
 
@@ -58,12 +59,11 @@ export async function handleRequestRegistrationForm(
     .limit(1)
     .maybeSingle()
 
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
   const caminho = params.form_type === 'cadastro' ? 'cadastro' : 'listar-imovel'
 
   if (pendente) {
     return {
-      link: `${base}/${caminho}/${pendente.token}`,
+      link: urlPublica(`/${caminho}/${pendente.token}`),
       ja_enviado: true,
       instrucao:
         'Este link já tinha sido enviado e continua válido. Lembre a pessoa dele em vez de tratar como novidade.',
@@ -92,7 +92,7 @@ export async function handleRequestRegistrationForm(
     .eq('id', contactId)
 
   return {
-    link: `${base}/${caminho}/${token}`,
+    link: urlPublica(`/${caminho}/${token}`),
     validade_horas: VALIDADE_HORAS,
     instrucao:
       'Envie o link sozinho numa linha, sem colchetes. Diga que leva menos de dois minutos e que você continua por aqui quando terminar.',

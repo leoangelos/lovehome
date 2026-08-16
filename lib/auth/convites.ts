@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { PAPEIS, type Role } from './permissions'
+import { urlPublica } from '@/lib/utils/url-publica'
 
 // ==========================================
 // Convite e gestão de acesso da equipe interna (PRD 9.1).
@@ -97,7 +98,6 @@ export async function convidarUsuario(params: {
     return { ok: false, erro: 'Já existe um usuário ativo com esse e-mail.' }
   }
 
-  const base = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
   const { data, error } = await admin.auth.admin.generateLink({
     type: 'invite',
@@ -106,7 +106,7 @@ export async function convidarUsuario(params: {
       // O papel viaja no metadata e é lido pelo trigger handle_new_user, para o
       // convidado já nascer com o papel certo (ver migration 016).
       data: { full_name: params.full_name.trim(), role: params.role },
-      redirectTo: `${base}/auth/confirm?next=/definir-senha`,
+      redirectTo: urlPublica('/auth/confirm?next=/definir-senha'),
     },
   })
 
@@ -130,7 +130,7 @@ export async function convidarUsuario(params: {
   /* Link montado aqui em vez de usar `action_link`: o action_link aponta para o
      domínio do Supabase, que redireciona de volta. Apontar direto para a nossa
      rota de confirmação tira um salto e mantém a pessoa no domínio da LoveHome. */
-  const link = `${base}/auth/confirm?token_hash=${data.properties.hashed_token}&type=invite&next=/definir-senha`
+  const link = urlPublica(`/auth/confirm?token_hash=${data.properties.hashed_token}&type=invite&next=/definir-senha`)
 
   return { ok: true, link, jaExistia: Boolean(existente) }
 }
