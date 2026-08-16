@@ -1,0 +1,57 @@
+/* ==========================================================================
+   LoveHome — Design System
+   Linguagem visual portada de C:\Programacao\ref_layout\vite.config (dashGt):
+   dashboard denso, superficie clara/escura por classe no <html>, cards
+   rounded-xl com borda de 1px, tipografia pequena e numeros tabulares.
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+/* Dark por classe no <html> (nao por prefers-color-scheme): o toggle do header
+   precisa vencer a preferencia do sistema. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+body {
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  @apply bg-gray-50 text-gray-900 antialiased;
+}
+
+html.dark body {
+  @apply bg-gray-950 text-gray-100;
+}
+
+/* Scrollbar fina — light */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Scrollbar fina — dark */
+html.dark ::-webkit-scrollbar-thumb {
+  @apply bg-gray-600;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500;
+}
+
+*,
+*::before,
+*::after {
+  transition-property: background-color, border-color, color;
+  transition-duration: 150ms;
+}
+
+/* Numeros tabulares em KPIs, tabelas e precos — colunas alinhadas. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}

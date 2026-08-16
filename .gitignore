@@ -1,0 +1,48 @@
+# ---- Dependências e build ----
+/node_modules
+/.pnp
+.pnp.*
+/.next/
+/out/
+/build
+/coverage
+*.tsbuildinfo
+next-env.d.ts
+
+# ---- Segredos ----
+# Só o exemplo entra: ele não carrega valor real. Se um dia .env aparecer no
+# histórico, toda chave é considerada vazada — APP_ENCRYPTION_KEY inclusive.
+.env*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# ---- Ferramentas de IA (uso local, não fazem parte do produto) ----
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# ---- Deploy e serviços locais ----
+.vercel
+supabase/.temp/
+supabase/.branches/
+
+# ---- Rascunhos de teste (convenção: scripts/_algo.ts é temporário) ----
+scripts/_*
+
+# ---- Logs ----
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+logs/
+
+# ---- Sistema operacional e editores ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp

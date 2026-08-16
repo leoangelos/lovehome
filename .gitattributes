@@ -1,0 +1,5 @@
+# Quebras de linha normalizadas para LF no repositório (Vercel/Linux); o Windows local converte na saída.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.pdf binary
