@@ -6,6 +6,7 @@ import { executeAgent } from './base-agent'
 import { searchPropertiesTool, handleSearchProperties } from './tools/properties'
 import { saveQualificationTool, handleSaveQualification } from './tools/qualification'
 import type { EstadoCadastro } from '@/lib/pipeline/resolve-registration'
+import type { ContextoConversa } from '@/lib/pipeline/contexto-conversa'
 import type { AgentResponse } from '@/lib/types/agents'
 import type OpenAI from 'openai'
 
@@ -33,7 +34,7 @@ export async function runInvestidorAgent(
   contactId: string,
   message: string,
   cadastro: EstadoCadastro,
-  extraContext = ''
+  contextoConversa?: ContextoConversa
 ): Promise<AgentResponse> {
   const tools: OpenAI.ChatCompletionTool[] = [searchPropertiesTool, saveQualificationTool]
 
@@ -46,7 +47,7 @@ export async function runInvestidorAgent(
         search_properties: (args) => handleSearchProperties(args as never),
         save_qualification: (args) => handleSaveQualification(contactId, args),
       },
-      extraContext,
+      contextoConversa,
     },
     contactId,
     message,

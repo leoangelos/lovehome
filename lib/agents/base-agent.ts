@@ -19,6 +19,7 @@ import { montarParametros } from '@/lib/agents/parametros'
 import { autorizarTool, exigeCadastro } from '@/lib/pipeline/resolve-registration'
 import { handleRequestRegistrationForm } from '@/lib/agents/tools/registration'
 import type { EstadoCadastro } from '@/lib/pipeline/resolve-registration'
+import type { ContextoConversa } from '@/lib/pipeline/contexto-conversa'
 import type { AgentResponse, ChatHistoryMessage, ToolCallTrace } from '@/lib/types/agents'
 import type { AgentName } from '@/lib/types/domain'
 import type OpenAI from 'openai'
@@ -74,6 +75,13 @@ interface BaseAgentConfig {
   model?: string
   /** Contexto extra colado no fim do prompt (perfil, imóveis já vistos etc.) */
   extraContext?: string
+  /**
+   * A conversa inteira, de todos os agentes, em ordem cronológica
+   * (lib/pipeline/contexto-conversa). O histórico por agente continua sendo o
+   * que vai como mensagens de chat; isto entra no prompt como transcrição, e é
+   * o que faz o Agendamento saber qual imóvel o SDR acabou de mostrar.
+   */
+  contextoConversa?: ContextoConversa
 }
 
 /** Carrega o historico do agente para este contato. */
@@ -218,17 +226,25 @@ enviar" o link sem colocá-lo na mensagem. Não transforme isso no assunto da co
  * nesta conversa, o sistema acrescenta. Sem isso, a pessoa negocia o horario
  * inteiro e so descobre a exigencia quando a tool e recusada — o oposto do que
  * a secao 4.1 do PRD descreve.
+ *
+ * "Nesta conversa" e a conversa inteira, nao so o historico deste agente: o
+ * SDR mandava o link, o Agendamento assumia com historico proprio vazio e
+ * mandava de novo, como se fosse a primeira vez.
  */
 function garantirLinkCadastro(
   conteudo: string,
   link: string | null,
-  historico: ChatCompletionMessageParam[]
+  historico: ChatCompletionMessageParam[],
+  jaEnviadoNaConversa: boolean
 ): string {
   if (!link || conteudo.includes(link)) return conteudo
 
-  const jaEnviado = historico.some(
-    (m) => m.role === 'assistant' && typeof m.content === 'string' && m.content.includes('/cadastro/')
-  )
+  const jaEnviado =
+    jaEnviadoNaConversa ||
+    historico.some(
+      (m) =>
+        m.role === 'assistant' && typeof m.content === 'string' && m.content.includes('/cadastro/')
+    )
   if (jaEnviado) return conteudo
 
   return `${conteudo}\n\nAh — pra confirmar eu vou precisar do seu cadastro, leva dois minutinhos:\n${link}`
@@ -310,6 +326,7 @@ export async function executeAgent(
     maxHistoryMessages = 20,
     model = 'gpt-4o',
     extraContext = '',
+    contextoConversa,
   } = config
 
   const estado: EstadoCadastro = estadoCadastro ?? {
@@ -329,8 +346,14 @@ export async function executeAgent(
      espelhava esse formato na resposta ao cliente — saia com bullet point, que
      e justamente o que denuncia robo no WhatsApp. Instrucao de formatacao no
      fim compete melhor com o formato do texto que veio antes. */
+  const blocoConversa = contextoConversa?.bloco ?? ''
   const effectivePrompt =
-    dbConfig.system_prompt + identityBlock + registrationBlock + extraContext + REGRAS_WHATSAPP
+    dbConfig.system_prompt +
+    identityBlock +
+    registrationBlock +
+    blocoConversa +
+    extraContext +
+    REGRAS_WHATSAPP
   const effectiveModel = dbConfig.model
 
   /* A temperatura vinha sendo CARREGADA e nunca enviada — so o orquestrador a
@@ -487,11 +510,14 @@ export async function executeAgent(
   }
 
   /* Fontes de URL confiaveis desta rodada: tudo o que as tools devolveram, o
-     link de cadastro e o prompt de sistema. Qualquer outra URL e invencao. */
+     link de cadastro, o prompt de sistema e o que a equipe JA mandou nesta
+     conversa (repetir o link do imovel que o SDR enviou nao e inventar).
+     Qualquer outra URL e invencao. */
   const fontesDeLink = [
     ...toolCallTraces.map((t) => JSON.stringify(t.result ?? '')),
     linkCadastro ?? '',
     dbConfig.system_prompt,
+    ...(contextoConversa?.urlsEnviadas ?? []),
   ]
   const semInventados = removerLinksInventados(
     response.choices[0].message.content ?? '',
@@ -503,7 +529,12 @@ export async function executeAgent(
     )
   }
 
-  const assistantContent = garantirLinkCadastro(semInventados.texto, linkCadastro, history)
+  const assistantContent = garantirLinkCadastro(
+    semInventados.texto,
+    linkCadastro,
+    history,
+    contextoConversa?.cadastroJaEnviado ?? false
+  )
   const totalDuration = Date.now() - startTime
 
   await registrarUso({
@@ -524,6 +555,7 @@ export async function executeAgent(
       }`,
       entradas: [
         { rotulo: 'Mensagens no histórico', valor: String(history.length) },
+        { rotulo: 'Mensagens da conversa no contexto', valor: String(contextoConversa?.total ?? 0) },
         {
           rotulo: 'Prompt de sistema',
           valor: `${Math.round(dbConfig.system_prompt.length / 100) / 10} mil caracteres`,

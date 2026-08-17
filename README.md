@@ -141,7 +141,8 @@ sequenceDiagram
   P->>DB: resolveRegistration — estado do cadastro (§6.3)
   P->>O: mensagem + contexto + estado do cadastro
   O-->>P: { agent, reasoning }
-  P->>A: histórico do agente (por pessoa) + mensagem
+  P->>DB: conversa inteira (todos os agentes, ordem cronológica)
+  P->>A: histórico do agente (por pessoa) + conversa inteira + mensagem
   loop tool calling (sequencial)
     A->>A: autorizarTool — exige cadastro? completo?
     A->>DB: tool (buscar imóvel, agendar, reservar…)
@@ -181,6 +182,7 @@ flowchart TD
 
 - **Os agentes não se repassam entre si.** Quem troca é o Orquestrador, em código, a cada mensagem — repasse por tool dependeria de o modelo lembrar de chamá-la. Quem falava com o SDR e pergunta do boleto cai no Suporte na mensagem seguinte.
 - **Memória por pessoa, não por canal**: `agent_histories` é chaveada por `(contact_id, agent)`. Quem começa no site e continua no WhatsApp encontra o mesmo agente lembrando da conversa.
+- **Duas memórias, uma completa e uma de trabalho.** Cada agente carrega o próprio `agent_histories` como mensagens de chat, e **todo** agente recebe no prompt a conversa inteira lida de `messages` — cliente, cada agente, corretor humano, follow-up — em ordem cronológica e rotulada (`lib/pipeline/contexto-conversa.ts`). Sem a segunda, a troca de agente perdia o fio: o SDR mostrava o imóvel, a pessoa perguntava "que dia posso visitar?" e o Agendamento, com histórico próprio vazio, perguntava "qual imóvel?". Vai como transcrição e não como mensagens `assistant` para o modelo não assumir a autoria do que outro agente escreveu. Link que a equipe já enviou nessa conversa passa a ser fonte confiável no filtro de link inventado, e o link de cadastro não é reenviado por agente novo.
 - **A única saída que o agente controla é `escalate_to_human`** — marca a conversa como escalada e devolve o assunto para uma pessoa.
 - Cada agente tem prompt, modelo e temperatura editáveis no painel; a lista de modelos é fechada e cada um carrega suas capacidades reais de payload (gpt-5 e os de raciocínio recusam `temperature` e `max_tokens` — a tela desabilita o que o modelo não aceita).
 
@@ -483,7 +485,7 @@ Não há framework de teste — os scripts `check:*` são a rede de regressão, 
 Baratos (não chamam a OpenAI):
 
 ```bash
-npm run check:gate && npm run check:contrato && npm run check:templates && npm run check:formularios && npm run check:campos && npm run check:painel && npm run check:canais && npm run check:documentos && npm run check:fotos && npm run check:meta && npm run check:configuracoes && npm run check:asaas && npm run check:pagamentos
+npm run check:contexto && npm run check:gate && npm run check:contrato && npm run check:templates && npm run check:formularios && npm run check:campos && npm run check:painel && npm run check:canais && npm run check:documentos && npm run check:fotos && npm run check:meta && npm run check:configuracoes && npm run check:asaas && npm run check:pagamentos
 ```
 
 Com custo de tokens (rodar quando a área mudou):
@@ -492,7 +494,7 @@ Com custo de tokens (rodar quando a área mudou):
 npm run check:auth && npm run check:pipeline && npm run check:agents && npm run check:proprietario && npm run check:closer && npm run check:suporte && npm run check:conversas && npm run check:copiloto && npm run check:agentes && npm run check:modelos && npm run check:widget && npm run check:busca && npm run check:rag && npm run check:uso && npm run check:webhook && npm run check:followup
 ```
 
-Cada script protege uma decisão específica: `check:gate` prova que o portão deriva do cadastro real; `check:busca` prova que a semântica não fura o filtro de preço; `check:suporte` prova que o agente pede CPF sem adiantar o valor do aluguel; `check:copiloto` prova que nenhum schema expõe `broker_id`; `check:auth` prova o recorte por carteira; `check:modelos` bate o catálogo de modelos contra a API real; `check:uso` prova que todo ponto pago registra custo.
+Cada script protege uma decisão específica: `check:contexto` prova que o agente novo enxerga o que o anterior disse (e não reenvia cadastro nem perde o link do imóvel); `check:gate` prova que o portão deriva do cadastro real; `check:busca` prova que a semântica não fura o filtro de preço; `check:suporte` prova que o agente pede CPF sem adiantar o valor do aluguel; `check:copiloto` prova que nenhum schema expõe `broker_id`; `check:auth` prova o recorte por carteira; `check:modelos` bate o catálogo de modelos contra a API real; `check:uso` prova que todo ponto pago registra custo.
 
 ---
 

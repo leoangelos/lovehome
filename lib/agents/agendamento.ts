@@ -17,14 +17,18 @@ import {
 import { requestRegistrationFormTool, handleRequestRegistrationForm } from './tools/registration'
 import { searchPropertiesTool, handleSearchProperties } from './tools/properties'
 import type { EstadoCadastro } from '@/lib/pipeline/resolve-registration'
+import type { ContextoConversa } from '@/lib/pipeline/contexto-conversa'
 import type { AgentResponse } from '@/lib/types/agents'
 import type OpenAI from 'openai'
 
 export const PROMPT = `Você agenda visitas a imóveis da LoveHome.
 
 Como conduzir:
-1. Confirme qual imóvel a pessoa quer visitar. Se ela não citar o código, use
-   search_properties para localizar pelo que ela descreveu e confirme antes de seguir.
+1. Confirme qual imóvel a pessoa quer visitar. Se o histórico da conversa mostra que a
+   equipe acabou de apresentar um imóvel, é dele que ela está falando — assuma e confirme
+   em meia frase ("o apê da Vila Mariana, né?"), sem perguntar "qual imóvel". Só se não
+   houver imóvel no histórico e ela não citar o código, use search_properties para
+   localizar pelo que ela descreveu e confirme antes de seguir.
 2. Chame check_broker_availability e ofereça no máximo 3 horários, em linguagem natural
    ("quinta às 10h", "sexta de manhã") — nunca data em formato técnico.
 3. Quando a pessoa escolher, chame create_visit.
@@ -46,7 +50,7 @@ export async function runAgendamentoAgent(
   contactId: string,
   message: string,
   cadastro: EstadoCadastro,
-  extraContext = ''
+  contextoConversa?: ContextoConversa
 ): Promise<AgentResponse> {
   const tools: OpenAI.ChatCompletionTool[] = [
     checkBrokerAvailabilityTool,
@@ -67,7 +71,7 @@ export async function runAgendamentoAgent(
           handleRequestRegistrationForm(contactId, args as never),
         search_properties: (args) => handleSearchProperties(args as never),
       },
-      extraContext,
+      contextoConversa,
     },
     contactId,
     message,

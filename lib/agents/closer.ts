@@ -23,6 +23,7 @@ import { searchPropertiesTool, handleSearchProperties } from './tools/properties
 import { requestRegistrationFormTool, handleRequestRegistrationForm } from './tools/registration'
 import { searchKnowledgeBaseTool, handleSearchKnowledgeBase } from './tools/conhecimento'
 import type { EstadoCadastro } from '@/lib/pipeline/resolve-registration'
+import type { ContextoConversa } from '@/lib/pipeline/contexto-conversa'
 import type { AgentResponse } from '@/lib/types/agents'
 import type OpenAI from 'openai'
 
@@ -55,7 +56,7 @@ export async function runCloserAgent(
   contactId: string,
   message: string,
   cadastro: EstadoCadastro,
-  extraContext = ''
+  contextoConversa?: ContextoConversa
 ): Promise<AgentResponse> {
   const tools: OpenAI.ChatCompletionTool[] = [
     createDealTool,
@@ -81,7 +82,7 @@ export async function runCloserAgent(
           handleRequestRegistrationForm(contactId, args as never),
         search_knowledge_base: (args) => handleSearchKnowledgeBase(args as never),
       },
-      extraContext,
+      contextoConversa,
     },
     contactId,
     message,

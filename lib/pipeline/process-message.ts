@@ -23,9 +23,11 @@ import { runProprietarioAgent } from '@/lib/agents/proprietario'
 import { runCloserAgent } from '@/lib/agents/closer'
 import { generateLeadSummary } from '@/lib/agents/summary'
 import { resolveRegistration } from '@/lib/pipeline/resolve-registration'
+import { carregarContextoConversa } from '@/lib/pipeline/contexto-conversa'
 import { dispatchOutgoing } from '@/lib/channels'
 import { isContactBlockedById } from '@/lib/channels/blocklist'
 import type { EstadoCadastro } from '@/lib/pipeline/resolve-registration'
+import type { ContextoConversa } from '@/lib/pipeline/contexto-conversa'
 import type { Channel } from '@/lib/channels/types'
 import type { AgentResponse, RoutableAgent } from '@/lib/types/agents'
 import type { Contact } from '@/lib/types/domain'
@@ -130,7 +132,15 @@ export async function processMessage(input: ProcessMessageInput): Promise<void> 
     agentName = 'escalonamento'
     routingReasoning += ` | agente '${agenteRoteado}' ainda não implementado (Marco 2/3) — escalado`
   } else {
-    agentResponse = await rodarAgente(agenteRoteado, atual.id, message, cadastro)
+    /* A conversa inteira, de todos os agentes, vai junto. Cada agente tem
+       memoria propria (agent_histories), e a troca de agente e justamente
+       quando essa memoria falha: o SDR mostrava o imovel, a pessoa perguntava
+       "que dia posso visitar?" e o Agendamento — com historico proprio vazio —
+       perguntava "qual imovel?". Carregado aqui, uma vez, e nao no base-agent,
+       porque e o pipeline que sabe qual mensagem esta sendo respondida agora
+       (as linhas do turno atual ja estao em `messages` e sao descartadas). */
+    const contexto = await carregarContextoConversa(atual.id, message)
+    agentResponse = await rodarAgente(agenteRoteado, atual.id, message, cadastro, contexto)
   }
 
   // ---- Efeitos das tools ----
@@ -166,22 +176,23 @@ async function rodarAgente(
   agente: RoutableAgent,
   contactId: string,
   message: string,
-  cadastro: EstadoCadastro
+  cadastro: EstadoCadastro,
+  contexto: ContextoConversa
 ): Promise<AgentResponse> {
   switch (agente) {
     case 'investidor':
-      return runInvestidorAgent(contactId, message, cadastro)
+      return runInvestidorAgent(contactId, message, cadastro, contexto)
     case 'agendamento':
-      return runAgendamentoAgent(contactId, message, cadastro)
+      return runAgendamentoAgent(contactId, message, cadastro, contexto)
     case 'proprietario':
-      return runProprietarioAgent(contactId, message, cadastro)
+      return runProprietarioAgent(contactId, message, cadastro, contexto)
     case 'closer':
-      return runCloserAgent(contactId, message, cadastro)
+      return runCloserAgent(contactId, message, cadastro, contexto)
     case 'suporte':
-      return runSuporteAgent(contactId, message, cadastro)
+      return runSuporteAgent(contactId, message, cadastro, contexto)
     case 'sdr':
     default:
-      return runSdrAgent(contactId, message, cadastro)
+      return runSdrAgent(contactId, message, cadastro, contexto)
   }
 }
 
