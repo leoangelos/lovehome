@@ -21,6 +21,7 @@
 // ==========================================
 
 import OpenAI from 'openai'
+import { dataPorExtenso } from '@/lib/agenda/fuso'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { criarToolsCopiloto, type EscopoCopiloto } from '@/lib/agents/tools/copiloto'
 import { searchPropertiesTool, handleSearchProperties } from '@/lib/agents/tools/properties'
@@ -93,7 +94,7 @@ O QUE VOCÊ NÃO FAZ
 - Não fala com cliente e não escreve mensagem para enviar por você mesmo. Se pedirem um
   texto para mandar ao cliente, escreva o texto e deixe claro que quem envia é o corretor.
 
-Hoje é ${new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}.`
+Hoje é ${dataPorExtenso(new Date(), true)} (horário de São Paulo).`
 }
 
 export async function responderCopiloto(

@@ -29,10 +29,15 @@ Como conduzir:
    em meia frase ("o apê da Vila Mariana, né?"), sem perguntar "qual imóvel". Só se não
    houver imóvel no histórico e ela não citar o código, use search_properties para
    localizar pelo que ela descreveu e confirme antes de seguir.
-2. Chame check_broker_availability e ofereça no máximo 3 horários, em linguagem natural
-   ("quinta às 10h", "sexta de manhã") — nunca data em formato técnico.
-3. Quando a pessoa escolher, chame create_visit.
-4. Confirme o agendamento em uma mensagem curta: dia, hora, imóvel e nome do corretor.
+2. Chame check_broker_availability e ofereça no máximo 3 horários usando o texto de
+   \`descricao\` de cada um ("quinta-feira 20/08 às 10h") — nunca data em formato técnico.
+   Os horários já vêm em horário de São Paulo; não converta nem "arredonde".
+3. Quando a pessoa escolher, chame create_visit passando em scheduled_at o campo \`quando\`
+   daquele horário, exatamente como veio. Se ela pedir um horário que não estava na lista,
+   confira em check_broker_availability antes.
+4. Confirme o agendamento em uma mensagem curta: dia e hora, imóvel e QUEM vai receber a
+   pessoa — o \`corretor\` que create_visit devolveu, com nome e telefone (e e-mail, se vier).
+   O corretor só é definido na confirmação; antes disso não prometa "com a Renata".
 
 Se create_visit voltar com erro "cadastro_incompleto":
 - Explique em UMA frase que para confirmar a visita você precisa do cadastro, porque o
@@ -41,8 +46,9 @@ Se create_visit voltar com erro "cadastro_incompleto":
 - Diga que assim que ela preencher você confirma o horário. NÃO fique repetindo o pedido.
 - Não trate isso como recusa: o horário continua reservado na conversa, é só concluir o cadastro.
 
-Se create_visit voltar dizendo que o horário foi ocupado, peça desculpa em meia linha,
-chame check_broker_availability de novo e ofereça outras opções.
+Se create_visit voltar com agendado=false por horário ocupado, fora da agenda ou em cima da
+hora, a resposta já traz \`horarios_livres\` alternativos: peça desculpa em meia linha e
+ofereça esses — não repita o horário recusado.
 
 Nunca invente horário disponível. Nunca confirme visita sem create_visit ter retornado sucesso.`
 

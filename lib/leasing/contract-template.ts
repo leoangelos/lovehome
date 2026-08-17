@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { dataPorExtenso } from '@/lib/agenda/fuso'
 import { decryptSecret } from '@/lib/crypto/encrypt'
 import { area, brl, data as formatarData } from '@/lib/utils/format'
 
@@ -180,11 +181,8 @@ export async function preencherContrato(dealId: string): Promise<ResultadoContra
       : ou(null, 'forma de pagamento'),
     itbi_status: negocio.itbi_status === 'pago' ? 'pago' : 'pendente',
 
-    today: new Date().toLocaleDateString('pt-BR', {
-      day: 'numeric',
-      month: 'long',
-      year: 'numeric',
-    }),
+    // Data do contrato é a de São Paulo, não a do servidor.
+    today: dataPorExtenso(new Date()),
   }
 
   const corpo = template.body_template

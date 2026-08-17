@@ -169,7 +169,7 @@ async function main() {
   ok('consultou a agenda do corretor', r3.toolsUsed.includes('check_broker_availability'))
 
   const chamadaAgenda = r3.trace?.toolCalls?.find((t) => t.name === 'check_broker_availability')
-  const horarios = (chamadaAgenda?.result as { horarios_livres?: string[] })?.horarios_livres ?? []
+  const horarios = (chamadaAgenda?.result as { horarios_livres?: unknown[] })?.horarios_livres ?? []
   ok('agenda devolveu horários livres', horarios.length > 0, `${horarios.length} slots`)
 
   const criacao = r3.trace?.toolCalls?.find((t) => t.name === 'create_visit')

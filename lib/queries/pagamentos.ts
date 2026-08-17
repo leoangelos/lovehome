@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { dataIsoLocal, instanteLocal, partesLocais } from '@/lib/agenda/fuso'
 
 /* Leituras da tela de Pagamentos (PRD 14 e 17.1).
  *
@@ -73,8 +74,11 @@ export async function montarPainelPagamentos(brokerId?: string | null): Promise<
 
   if (error) throw new Error(`Falha ao listar pagamentos: ${error.message}`)
 
-  const hoje = new Date()
-  hoje.setHours(0, 0, 0, 0)
+  /* "Hoje" no calendário de São Paulo. `due_date` é DATE (sem hora): vencida
+     é due_date < hoje, comparado como data — sem passar por relógio de
+     servidor, que em UTC virava o dia às 21h. */
+  const agora = new Date()
+  const hojeIso = dataIsoLocal(agora)
 
   let parcelas: (ParcelaLinha & { _broker: string | null })[] = (data ?? []).map((p) => {
     const negocio = p.deals as unknown as {
@@ -91,7 +95,7 @@ export async function montarPainelPagamentos(brokerId?: string | null): Promise<
     const vencida =
       p.status !== 'pago' &&
       p.status !== 'cancelado' &&
-      new Date(`${p.due_date}T23:59:59`) < hoje
+      String(p.due_date).slice(0, 10) < hojeIso
 
     return {
       id: p.id,
@@ -119,7 +123,8 @@ export async function montarPainelPagamentos(brokerId?: string | null): Promise<
      o PostgREST não filtra por coluna de tabela aninhada num select como este. */
   if (brokerId) parcelas = parcelas.filter((p) => p._broker === brokerId)
 
-  const inicioDoMes = new Date(hoje.getFullYear(), hoje.getMonth(), 1)
+  const partesHoje = partesLocais(agora)
+  const inicioDoMes = instanteLocal(partesHoje.ano, partesHoje.mes, 1)
 
   const resumo: ResumoPagamentos = {
     aReceberCents: parcelas

@@ -20,6 +20,7 @@
 // ==========================================
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { inicioDoDiaLocal } from '@/lib/agenda/fuso'
 import { brl, dataHora } from '@/lib/utils/format'
 import { ROTULO_DOCUMENTO } from '@/lib/queries/negocios'
 import { FERRAMENTAS_NEGOCIAIS } from '@/lib/agents/tools/copiloto-negocio'
@@ -105,11 +106,11 @@ falta. Passe o nome do cliente ou o código do imóvel.`,
 
 // ---------------------------------------------------------------------------
 
+/* "Hoje" é o dia de São Paulo, não o do servidor (UTC): às 22h no Brasil o
+   servidor já está em amanhã, e "quais são minhas visitas hoje" listava o dia
+   errado. */
 function inicioDoDia(offsetDias = 0): string {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() + offsetDias)
-  return d.toISOString()
+  return inicioDoDiaLocal(offsetDias).toISOString()
 }
 
 async function agenda(escopo: EscopoCopiloto, params: { periodo: string }) {

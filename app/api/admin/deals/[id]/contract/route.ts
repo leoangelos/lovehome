@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { dataLocal } from '@/lib/agenda/fuso'
 import { autorizarApi } from '@/lib/auth/session'
 import { negocioDaCarteira } from '@/lib/auth/carteira'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -42,7 +43,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     const pdf = await gerarPdfContrato({
       texto: contrato.texto,
-      rodape: `LoveHome · ${contrato.referenciaImovel} · gerado em ${new Date().toLocaleDateString('pt-BR')}`,
+      rodape: `LoveHome · ${contrato.referenciaImovel} · gerado em ${dataLocal(new Date())}`,
     })
 
     const supabase = createAdminClient()

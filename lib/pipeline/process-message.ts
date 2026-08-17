@@ -139,7 +139,7 @@ export async function processMessage(input: ProcessMessageInput): Promise<void> 
        perguntava "qual imovel?". Carregado aqui, uma vez, e nao no base-agent,
        porque e o pipeline que sabe qual mensagem esta sendo respondida agora
        (as linhas do turno atual ja estao em `messages` e sao descartadas). */
-    const contexto = await carregarContextoConversa(atual.id, message)
+    const contexto = await carregarContextoConversa(atual.id, message, conversationId)
     agentResponse = await rodarAgente(agenteRoteado, atual.id, message, cadastro, contexto)
   }
 

@@ -27,8 +27,11 @@
 // ==========================================
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { FUSO_BRASIL } from '@/lib/agenda/fuso'
 
 export interface ContextoConversa {
+  /** Conversa em que a mensagem atual chegou — vai para llm_usage, para o painel de uso ligar a chamada ao trace. */
+  conversationId: string | null
   /** Bloco pronto para colar no prompt. Vazio quando não há conversa anterior. */
   bloco: string
   /** URLs que a equipe (agentes ou humano) já enviou nesta conversa. */
@@ -58,6 +61,7 @@ const MARGEM_TURNO_ATUAL = 10
 const PADRAO_URL = /https?:\/\/[^\s<>"'`)\]]+/g
 
 export const CONTEXTO_VAZIO: ContextoConversa = {
+  conversationId: null,
   bloco: '',
   urlsEnviadas: [],
   cadastroJaEnviado: false,
@@ -77,7 +81,8 @@ export const CONTEXTO_VAZIO: ContextoConversa = {
  */
 export async function carregarContextoConversa(
   contactId: string,
-  mensagemAtual: string
+  mensagemAtual: string,
+  conversationId: string | null = null
 ): Promise<ContextoConversa> {
   const supabase = createAdminClient()
 
@@ -93,11 +98,11 @@ export async function carregarContextoConversa(
      infinitamente melhor do que não responder. */
   if (error) {
     console.error('[contexto-conversa] falha ao ler messages:', error.message)
-    return CONTEXTO_VAZIO
+    return { ...CONTEXTO_VAZIO, conversationId }
   }
 
   const linhas = ((data ?? []) as LinhaConversa[]).reverse()
-  return montarContextoConversa(linhas, mensagemAtual)
+  return { ...montarContextoConversa(linhas, mensagemAtual), conversationId }
 }
 
 /**
@@ -134,6 +139,7 @@ link que aparece abaixo se fizer sentido — ele já foi enviado pela equipe.
 ${transcricao.join('\n')}`
 
   return {
+    conversationId: null,
     bloco,
     urlsEnviadas: [...urls],
     cadastroJaEnviado,
@@ -186,7 +192,7 @@ function resumir(texto: string): string {
 }
 
 const FORMATO_DATA = new Intl.DateTimeFormat('pt-BR', {
-  timeZone: 'America/Sao_Paulo',
+  timeZone: FUSO_BRASIL,
   day: '2-digit',
   month: '2-digit',
   hour: '2-digit',

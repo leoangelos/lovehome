@@ -20,6 +20,7 @@ import { autorizarTool, exigeCadastro } from '@/lib/pipeline/resolve-registratio
 import { handleRequestRegistrationForm } from '@/lib/agents/tools/registration'
 import type { EstadoCadastro } from '@/lib/pipeline/resolve-registration'
 import type { ContextoConversa } from '@/lib/pipeline/contexto-conversa'
+import { agoraDescrito } from '@/lib/agenda/fuso'
 import type { AgentResponse, ChatHistoryMessage, ToolCallTrace } from '@/lib/types/agents'
 import type { AgentName } from '@/lib/types/domain'
 import type OpenAI from 'openai'
@@ -346,10 +347,15 @@ export async function executeAgent(
      espelhava esse formato na resposta ao cliente — saia com bullet point, que
      e justamente o que denuncia robo no WhatsApp. Instrucao de formatacao no
      fim compete melhor com o formato do texto que veio antes. */
+  /* Sem isto o modelo nao sabe que dia e hoje: "quinta" vira uma quinta
+     qualquer, "amanha" nao resolve, e a data de treinamento vaza como se fosse
+     o presente. Sempre em horario de Sao Paulo — o servidor esta em UTC. */
+  const blocoAgora = `\n\nAGORA: ${agoraDescrito()} (horário de São Paulo). Toda data e hora nesta conversa é nesse fuso.`
   const blocoConversa = contextoConversa?.bloco ?? ''
   const effectivePrompt =
     dbConfig.system_prompt +
     identityBlock +
+    blocoAgora +
     registrationBlock +
     blocoConversa +
     extraContext +
@@ -546,6 +552,7 @@ export async function executeAgent(
     duracaoMs: totalDuration,
     agente: agentName,
     contactId,
+    conversationId: contextoConversa?.conversationId ?? null,
     /* O "por que custou isso". Histórico longo e retorno grande de tool são as
        duas causas de conta alta, e nenhuma das duas é visível olhando só o
        total de tokens. */

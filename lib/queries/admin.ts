@@ -94,13 +94,19 @@ export interface VisitaLinha {
   lead: string | null
   lead_id: string
   imovel: string | null
+  imovel_titulo: string | null
   imovel_regiao: string | null
+  /** Para a visão por imóvel — quem mais tem visita neste apartamento, e quando. */
+  property_id: string | null
   corretor: string | null
   /** O calendário filtra por corretor no navegador; o recorte de acesso continua na consulta. */
   broker_id: string | null
 }
 
-export async function listarVisitas(brokerId?: string | null): Promise<VisitaLinha[]> {
+export async function listarVisitas(
+  brokerId?: string | null,
+  propertyId?: string | null
+): Promise<VisitaLinha[]> {
   const supabase = createAdminClient()
 
   let consulta = supabase
@@ -108,7 +114,7 @@ export async function listarVisitas(brokerId?: string | null): Promise<VisitaLin
     .select(
       `id, scheduled_at, status, type, contact_id,
        contacts ( name ),
-       properties ( reference_code, region ),
+       property_id, properties ( reference_code, title, region ),
        broker_id, brokers ( name )`
     )
     /* Janela em volta de hoje, e não "as 200 primeiras de sempre": ordenado
@@ -120,6 +126,7 @@ export async function listarVisitas(brokerId?: string | null): Promise<VisitaLin
     .limit(600)
 
   if (brokerId) consulta = consulta.eq('broker_id', brokerId)
+  if (propertyId) consulta = consulta.eq('property_id', propertyId)
 
   const { data, error } = await consulta
   if (error) throw new Error(`Falha ao listar visitas: ${error.message}`)
@@ -128,6 +135,7 @@ export async function listarVisitas(brokerId?: string | null): Promise<VisitaLin
     const contato = v.contacts as unknown as { name: string | null } | null
     const imovel = v.properties as unknown as {
       reference_code: string
+      title: string | null
       region: string
     } | null
     const corretor = v.brokers as unknown as { name: string } | null
@@ -140,7 +148,9 @@ export async function listarVisitas(brokerId?: string | null): Promise<VisitaLin
       lead: contato?.name ?? null,
       lead_id: v.contact_id,
       imovel: imovel?.reference_code ?? null,
+      imovel_titulo: imovel?.title ?? null,
       imovel_regiao: imovel?.region ?? null,
+      property_id: v.property_id ?? null,
       corretor: corretor?.name ?? null,
       broker_id: v.broker_id ?? null,
     }
@@ -158,7 +168,13 @@ export interface CorretorLinha {
   imoveis: number
   visitas_futuras: number
   leads: number
-  agenda: { weekday: number; start_time: string; end_time: string }[]
+  agenda: {
+    weekday: number
+    start_time: string
+    end_time: string
+    break_start: string | null
+    break_end: string | null
+  }[]
 }
 
 export async function listarCorretores(): Promise<CorretorLinha[]> {
@@ -167,7 +183,9 @@ export async function listarCorretores(): Promise<CorretorLinha[]> {
   const [{ data: corretores, error }, { data: agenda }, { data: imoveis }, { data: visitas }, { data: leads }] =
     await Promise.all([
       supabase.from('brokers').select('*').order('name'),
-      supabase.from('broker_availability').select('broker_id, weekday, start_time, end_time'),
+      supabase
+        .from('broker_availability')
+        .select('broker_id, weekday, start_time, end_time, break_start, break_end'),
       supabase.from('properties').select('broker_id').not('broker_id', 'is', null),
       supabase
         .from('property_visits')
@@ -195,9 +213,30 @@ export async function listarCorretores(): Promise<CorretorLinha[]> {
     leads: contar(leads, 'assigned_broker_id', c.id),
     agenda: (agenda ?? [])
       .filter((a) => a.broker_id === c.id)
-      .map(({ weekday, start_time, end_time }) => ({ weekday, start_time, end_time }))
+      .map(({ weekday, start_time, end_time, break_start, break_end }) => ({
+        weekday,
+        start_time,
+        end_time,
+        break_start: break_start ?? null,
+        break_end: break_end ?? null,
+      }))
       .sort((a, b) => a.weekday - b.weekday),
   }))
+}
+
+/**
+ * Bairros presentes no acervo — sugestão para "áreas de atuação" do corretor.
+ * A regra de elegibilidade compara com properties.region, então oferecer o que
+ * existe evita "Vila Mariana" num lado e "V. Mariana" no outro.
+ */
+export async function listarRegioesDoAcervo(): Promise<string[]> {
+  const { data } = await createAdminClient().from('properties').select('region').not('region', 'is', null)
+  const vistas = new Map<string, string>()
+  for (const linha of data ?? []) {
+    const r = String(linha.region).trim()
+    if (r && !vistas.has(r.toLowerCase())) vistas.set(r.toLowerCase(), r)
+  }
+  return [...vistas.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'))
 }
 
 export interface ResumoLinha {

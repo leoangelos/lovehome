@@ -1,7 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, List } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarDays, ChevronLeft, ChevronRight, List } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { SelecaoBuscavel } from '@/components/ui/SelecaoBuscavel'
 import { data as formatarData } from '@/lib/utils/format'
@@ -15,7 +15,13 @@ import type { VisitaLinha } from '@/lib/queries/admin'
  *
  * O filtro por corretor é CONVENIÊNCIA de quem vê tudo. O recorte de acesso
  * continua na consulta do servidor: corretor recebe só a própria agenda e nem
- * chega a receber as linhas dos outros, então o seletor não aparece para ele. */
+ * chega a receber as linhas dos outros, então o seletor não aparece para ele.
+ *
+ * O modo "Por imóvel" responde a terceira pergunta: "quem mais vai neste
+ * apartamento, e quando" — duas pessoas com corretores diferentes no mesmo
+ * imóvel no mesmo horário é o conflito que a agenda por corretor não mostra.
+ * O motor de agendamento já recusa isso (e o banco também, por índice único);
+ * a visão aqui é para enxergar a ocupação e pegar dado legado. */
 
 const ROTULO_TIPO: Record<string, string> = {
   visita: 'Visita',
@@ -55,14 +61,29 @@ export function VisitasCalendario({
   podeFiltrarPorCorretor: boolean
 }) {
   const hoje = new Date()
-  const [modo, setModo] = useState<'calendario' | 'lista'>('calendario')
+  const [modo, setModo] = useState<'calendario' | 'lista' | 'imoveis'>('calendario')
   const [corretor, setCorretor] = useState('')
+  const [imovel, setImovel] = useState('')
   const [mes, setMes] = useState(() => new Date(hoje.getFullYear(), hoje.getMonth(), 1))
   const [diaAberto, setDiaAberto] = useState<string | null>(chaveDia(hoje))
 
+  /* Imóveis que aparecem nas visitas carregadas — é o universo útil do filtro. */
+  const imoveis = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const v of visitas) {
+      if (v.property_id && !m.has(v.property_id)) {
+        m.set(v.property_id, `${v.imovel ?? '?'}${v.imovel_regiao ? ` · ${v.imovel_regiao}` : ''}`)
+      }
+    }
+    return [...m.entries()].map(([valor, rotulo]) => ({ valor, rotulo })).sort((a, b) => a.rotulo.localeCompare(b.rotulo))
+  }, [visitas])
+
   const filtradas = useMemo(
-    () => (corretor ? visitas.filter((v) => v.broker_id === corretor) : visitas),
-    [visitas, corretor]
+    () =>
+      visitas.filter(
+        (v) => (!corretor || v.broker_id === corretor) && (!imovel || v.property_id === imovel)
+      ),
+    [visitas, corretor, imovel]
   )
 
   const porDia = useMemo(() => {
@@ -148,11 +169,24 @@ export function VisitasCalendario({
             </div>
           )}
 
+          {imoveis.length > 0 && (
+            <div className="w-52">
+              <SelecaoBuscavel
+                opcoes={imoveis}
+                valor={imovel}
+                aoEscolher={setImovel}
+                rotuloVazio="Todos os imóveis"
+                placeholder="Buscar imóvel…"
+              />
+            </div>
+          )}
+
           <div className="flex rounded-lg border border-gray-200 dark:border-gray-800 overflow-hidden">
             {(
               [
                 { chave: 'calendario' as const, Icone: CalendarDays, rotulo: 'Calendário' },
                 { chave: 'lista' as const, Icone: List, rotulo: 'Lista' },
+                { chave: 'imoveis' as const, Icone: Building2, rotulo: 'Por imóvel' },
               ]
             ).map(({ chave, Icone, rotulo }) => (
               <button
@@ -178,6 +212,7 @@ export function VisitasCalendario({
         {futuras.length} agendada{futuras.length === 1 ? '' : 's'} daqui pra frente ·{' '}
         {filtradas.length} na janela carregada
         {corretor && ' · filtrado por corretor'}
+        {imovel && ' · filtrado por imóvel'}
       </p>
 
       {modo === 'calendario' ? (
@@ -262,6 +297,8 @@ export function VisitasCalendario({
             </section>
           )}
         </>
+      ) : modo === 'imoveis' ? (
+        <PorImovel visitas={filtradas} hoje={hoje} />
       ) : (
         <div className="space-y-5">
           {porDia.size === 0 && <Vazio />}
@@ -323,6 +360,104 @@ function LinhasDoDia({ visitas }: { visitas: VisitaLinha[] }) {
           <StatusBadge status={v.status} />
         </div>
       ))}
+    </div>
+  )
+}
+
+/**
+ * Ocupação por imóvel: só visitas ativas daqui pra frente, agrupadas por
+ * apartamento e ordenadas pela próxima. Duas visitas ativas no mesmo imóvel
+ * com menos de 1h de diferença ganham a marca de conflito — o motor não deixa
+ * mais criar assim, então o que aparecer aqui é dado antigo ou marcação manual.
+ */
+function PorImovel({ visitas, hoje }: { visitas: VisitaLinha[]; hoje: Date }) {
+  const grupos = useMemo(() => {
+    const ativas = visitas.filter(
+      (v) => new Date(v.scheduled_at) >= hoje && ['agendada', 'confirmada'].includes(v.status)
+    )
+    const m = new Map<string, VisitaLinha[]>()
+    for (const v of ativas) {
+      const k = v.property_id ?? 'sem-imovel'
+      if (!m.has(k)) m.set(k, [])
+      m.get(k)!.push(v)
+    }
+    return [...m.entries()]
+      .map(([id, lista]) => {
+        lista.sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+        const conflitos = new Set<string>()
+        for (let i = 1; i < lista.length; i++) {
+          const antes = new Date(lista[i - 1].scheduled_at).getTime()
+          const agora = new Date(lista[i].scheduled_at).getTime()
+          if (agora - antes < 60 * 60_000) {
+            conflitos.add(lista[i - 1].id)
+            conflitos.add(lista[i].id)
+          }
+        }
+        return { id, lista, conflitos }
+      })
+      .sort((a, b) => a.lista[0].scheduled_at.localeCompare(b.lista[0].scheduled_at))
+  }, [visitas, hoje])
+
+  if (grupos.length === 0) return <Vazio />
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      {grupos.map(({ id, lista, conflitos }) => {
+        const primeira = lista[0]
+        return (
+          <div
+            key={id}
+            className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden"
+          >
+            <div className="flex items-start justify-between gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                  {primeira.imovel ?? 'Imóvel não informado'}
+                  {primeira.imovel_regiao && (
+                    <span className="font-normal text-gray-400 dark:text-gray-500"> · {primeira.imovel_regiao}</span>
+                  )}
+                </p>
+                {primeira.imovel_titulo && (
+                  <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{primeira.imovel_titulo}</p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {conflitos.size > 0 && (
+                  <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400">
+                    <AlertTriangle className="w-3 h-3" />
+                    conflito de horário
+                  </span>
+                )}
+                <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 tnum">
+                  {lista.length} visita{lista.length === 1 ? '' : 's'}
+                </span>
+              </div>
+            </div>
+            <div className="divide-y divide-gray-100 dark:divide-gray-800">
+              {lista.map((v) => (
+                <div
+                  key={v.id}
+                  className={`flex items-center gap-3 px-4 py-2.5 ${
+                    conflitos.has(v.id) ? 'bg-red-50/60 dark:bg-red-900/10' : ''
+                  }`}
+                >
+                  <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 tnum w-20 flex-shrink-0">
+                    {formatarData(chaveDia(new Date(v.scheduled_at))).slice(0, 5)} {horaDe(v.scheduled_at)}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-gray-800 dark:text-gray-200 truncate">{v.lead ?? 'Contato sem nome'}</p>
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">
+                      {v.corretor ?? 'Sem corretor'}
+                      {v.type !== 'visita' && ` · ${ROTULO_TIPO[v.type]}`}
+                    </p>
+                  </div>
+                  <StatusBadge status={v.status} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

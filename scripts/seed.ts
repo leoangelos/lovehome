@@ -112,13 +112,16 @@ async function main() {
   const porNome = (n: string) => corretores!.find((c) => c.name === n)!.id
   console.log(`✓ ${corretores!.length} corretores`)
 
-  // Agenda: seg-sex 9h-18h para todos; sabado 9h-13h so para os residenciais.
+  // Agenda: seg-sex 9h-18h com almoco 12h-13h para todos; sabado 9h-13h so
+  // para os residenciais (sem almoco — a janela acaba as 13h).
   const agenda = corretores!.flatMap((c) => {
     const semana = [1, 2, 3, 4, 5].map((weekday) => ({
       broker_id: c.id,
       weekday,
       start_time: '09:00',
       end_time: '18:00',
+      break_start: '12:00',
+      break_end: '13:00',
     }))
     return c.specialty === 'residencial'
       ? [...semana, { broker_id: c.id, weekday: 6, start_time: '09:00', end_time: '13:00' }]

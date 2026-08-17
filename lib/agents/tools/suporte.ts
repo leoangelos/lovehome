@@ -22,6 +22,7 @@ import { redis } from '@/lib/redis/client'
 import { hashCpf } from '@/lib/registrations/cpf'
 import { normalizarCpf, cpfValido } from '@/lib/registrations/cpf-formato'
 import { brl, data as fmtData } from '@/lib/utils/format'
+import { dataLocal, instanteLocal, partesLocais } from '@/lib/agenda/fuso'
 import type OpenAI from 'openai'
 
 type Tool = OpenAI.ChatCompletionTool
@@ -331,15 +332,20 @@ export async function handleRequestLeaseTermination(
     }
   }
 
-  const pretendida = new Date(`${params.data_pretendida}T12:00:00`)
-  if (Number.isNaN(pretendida.getTime())) {
+  /* Meio-dia de São Paulo dos dois lados: a data pedida e a mínima. Fazer a
+     conta no relógio do servidor (UTC) deslocava a mínima em um dia depois das
+     21h no Brasil — e aviso prévio é prazo contratual. */
+  const partesPretendida = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(params.data_pretendida ?? '').trim())
+  const pretendida = partesPretendida
+    ? instanteLocal(Number(partesPretendida[1]), Number(partesPretendida[2]), Number(partesPretendida[3]), 12)
+    : null
+  if (!pretendida || Number.isNaN(pretendida.getTime())) {
     return { registrado: false, instrucao: 'Data inválida. Peça a data no formato dia/mês/ano.' }
   }
 
   const dias = n.notice_period_days ?? 30
-  const minima = new Date()
-  minima.setHours(12, 0, 0, 0)
-  minima.setDate(minima.getDate() + dias)
+  const hoje = partesLocais(new Date())
+  const minima = instanteLocal(hoje.ano, hoje.mes, hoje.dia + dias, 12)
 
   /* A validação é AQUI, não no prompt. O aviso prévio tem efeito contratual —
      registrar uma data menor criaria expectativa que o contrato não sustenta, e
@@ -347,7 +353,7 @@ export async function handleRequestLeaseTermination(
   if (pretendida < minima) {
     return {
       registrado: false,
-      data_minima: fmtData(minima.toISOString()),
+      data_minima: dataLocal(minima),
       aviso_previo_dias: dias,
       instrucao:
         `O contrato exige ${dias} dias de aviso prévio, então a data pedida não pode ser ` +

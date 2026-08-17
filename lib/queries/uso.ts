@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { dataIsoLocal, inicioDoDiaLocal } from '@/lib/agenda/fuso'
 import { ROTULO_OPERACAO, type OperacaoLLM } from '@/lib/observabilidade/uso'
 
 /* Leituras do painel de uso e custo.
@@ -78,11 +79,10 @@ interface LinhaCrua {
   sucesso: boolean
 }
 
+/* Dia de São Paulo. Em UTC, "hoje" começava às 21h de ontem no Brasil e a
+   série diária agrupava pelo dia errado. */
 function inicioDoDia(diasAtras = 0): Date {
-  const d = new Date()
-  d.setHours(0, 0, 0, 0)
-  d.setDate(d.getDate() - diasAtras)
-  return d
+  return inicioDoDiaLocal(-diasAtras)
 }
 
 function somar(linhas: LinhaCrua[]): ResumoPeriodo {
@@ -145,12 +145,11 @@ export async function montarPainelUso(): Promise<PainelUso> {
   // ---- Série diária, com os dias sem uso preenchidos ----
   const porDiaMapa = new Map<string, DiaUso>()
   for (let i = 29; i >= 0; i--) {
-    const d = inicioDoDia(i)
-    const chave = d.toISOString().slice(0, 10)
+    const chave = dataIsoLocal(inicioDoDia(i))
     porDiaMapa.set(chave, { dia: chave, requisicoes: 0, tokens: 0, custoUsd: 0 })
   }
   for (const l of linhas) {
-    const chave = new Date(l.ocorrido_em).toISOString().slice(0, 10)
+    const chave = dataIsoLocal(new Date(l.ocorrido_em))
     const dia = porDiaMapa.get(chave)
     if (!dia) continue
     dia.requisicoes++

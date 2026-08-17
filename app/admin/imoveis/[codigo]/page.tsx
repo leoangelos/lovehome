@@ -2,6 +2,8 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 import { ImovelForm } from '@/components/imoveis/ImovelForm'
 import { GerenciadorFotos } from '@/components/imoveis/GerenciadorFotos'
+import { VisitasDoImovel } from '@/components/imoveis/VisitasDoImovel'
+import { listarVisitas } from '@/lib/queries/admin'
 import { exigirAcesso } from '@/lib/auth/session'
 import { escopoProprio } from '@/lib/auth/permissions'
 import { createAdminClient } from '@/lib/supabase/admin'
@@ -44,9 +46,13 @@ export default async function EditarImovelPage({
     notFound()
   }
 
-  const [proprietarios, { data: corretores }] = await Promise.all([
+  const [proprietarios, { data: corretores }, visitas] = await Promise.all([
     opcoesProprietarios(),
     supabase.from('brokers').select('id, name').eq('is_active', true).order('name'),
+    /* Agenda do imóvel — TODAS as visitas dele, de qualquer corretor. O
+       recorte por carteira já foi feito acima (o corretor só chega aqui se o
+       imóvel é dele), e ver quem mais vai ao apartamento é justamente o ponto. */
+    listarVisitas(null, imovel.id),
   ])
 
   return (
@@ -59,6 +65,8 @@ export default async function EditarImovelPage({
       </div>
 
       <ImovelForm imovel={imovel} proprietarios={proprietarios} corretores={corretores ?? []} />
+
+      <VisitasDoImovel visitas={visitas} agora={new Date()} />
 
       {/* Fotos ficam FORA do formulário: elas salvam sozinhas, uma ação por vez.
           Dentro do form, arrastar uma foto ficaria pendente até alguém clicar em

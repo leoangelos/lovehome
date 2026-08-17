@@ -1,7 +1,12 @@
 /* Formatadores pt-BR — portados de ref_layout/src/utils/format.js.
    Diferenca importante em relacao a referencia: o schema do LoveHome guarda
    dinheiro em centavos (colunas *_cents INTEGER, PRD 10), entao as funcoes de
-   moeda recebem centavos, nao reais. Passar reais aqui infla o valor em 100x. */
+   moeda recebem centavos, nao reais. Passar reais aqui infla o valor em 100x.
+
+   Data e hora saem SEMPRE em horario de Sao Paulo (lib/agenda/fuso), rode isto
+   no servidor (UTC) ou no navegador. */
+
+import { dataHoraLocal, dataLocal } from '@/lib/agenda/fuso'
 
 const MOEDA = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
@@ -42,10 +47,20 @@ export function pct(valor: number | null | undefined, casas = 2): string {
   })}%`
 }
 
-/** '2026-07-20' → '20/07/2026' */
+/**
+ * '2026-07-20' → '20/07/2026'.
+ * Data pura (DATE) é lida como está. Timestamp ('2026-07-20T23:30:00Z') é
+ * convertido para o dia de São Paulo — cortar os 10 primeiros caracteres
+ * mostraria o dia de UTC, que depois das 21h no Brasil já é amanhã.
+ */
 export function data(iso: string | null | undefined): string {
   if (!iso) return '—'
-  const [a, m, d] = String(iso).slice(0, 10).split('-')
+  const texto = String(iso)
+  if (texto.length > 10) {
+    const dt = new Date(texto)
+    if (!Number.isNaN(dt.getTime())) return dataLocal(dt)
+  }
+  const [a, m, d] = texto.slice(0, 10).split('-')
   return `${d}/${m}/${a}`
 }
 
@@ -58,16 +73,16 @@ export function dataCurta(iso: string | null | undefined): string {
   return `${d}/${MESES[Number(m) - 1]}`
 }
 
-/** '2026-07-20T14:30:00Z' → '20/07 14:30' */
+/**
+ * '2026-07-20T14:30:00Z' → '20/07 11:30' (horário de São Paulo).
+ * Sempre em SP, esteja rodando no servidor (UTC) ou no navegador: é o horário
+ * da operação, e o mesmo carimbo precisa ler igual no trace e na tela.
+ */
 export function dataHora(iso: string | null | undefined): string {
   if (!iso) return '—'
   const dt = new Date(iso)
   if (Number.isNaN(dt.getTime())) return '—'
-  const dd = String(dt.getDate()).padStart(2, '0')
-  const mm = String(dt.getMonth() + 1).padStart(2, '0')
-  const hh = String(dt.getHours()).padStart(2, '0')
-  const mi = String(dt.getMinutes()).padStart(2, '0')
-  return `${dd}/${mm} ${hh}:${mi}`
+  return dataHoraLocal(dt)
 }
 
 /** 87.5 → '87,5 m²' */
