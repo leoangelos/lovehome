@@ -6,6 +6,7 @@ import { StatusBadge } from '@/components/ui/StatusBadge'
 import { SelecaoBuscavel } from '@/components/ui/SelecaoBuscavel'
 import { data as formatarData } from '@/lib/utils/format'
 import type { VisitaLinha } from '@/lib/queries/admin'
+import { AcoesVisita } from './AcoesVisita'
 
 /* Agenda de visitas em calendário (§17.1).
  *
@@ -49,16 +50,21 @@ function diaDaSemana(iso: string) {
   return nome.charAt(0).toUpperCase() + nome.slice(1)
 }
 
-const CANCELADAS = ['cancelada', 'nao_compareceu']
+/* `no_show` é o valor do enum (VisitStatus) — 'nao_compareceu' nunca casava e a
+   falta continuava contando como visita ativa no calendário. */
+const CANCELADAS = ['cancelada', 'no_show']
 
 export function VisitasCalendario({
   visitas,
   corretores,
   podeFiltrarPorCorretor,
+  podeEditar = false,
 }: {
   visitas: VisitaLinha[]
   corretores: { id: string; name: string }[]
   podeFiltrarPorCorretor: boolean
+  /** Mostra as ações (confirmar, reagendar, cancelar…). A posse é checada na API. */
+  podeEditar?: boolean
 }) {
   const hoje = new Date()
   const [modo, setModo] = useState<'calendario' | 'lista' | 'imoveis'>('calendario')
@@ -293,12 +299,12 @@ export function VisitasCalendario({
                   {diaDaSemana(`${diaAberto}T12:00:00`)}
                 </span>
               </h2>
-              <LinhasDoDia visitas={doDiaAberto} />
+              <LinhasDoDia visitas={doDiaAberto} podeEditar={podeEditar} />
             </section>
           )}
         </>
       ) : modo === 'imoveis' ? (
-        <PorImovel visitas={filtradas} hoje={hoje} />
+        <PorImovel visitas={filtradas} hoje={hoje} podeEditar={podeEditar} />
       ) : (
         <div className="space-y-5">
           {porDia.size === 0 && <Vazio />}
@@ -316,7 +322,7 @@ export function VisitasCalendario({
                   {diaDaSemana(`${dia}T12:00:00`)}
                 </span>
               </h2>
-              <LinhasDoDia visitas={doDia} />
+              <LinhasDoDia visitas={doDia} podeEditar={podeEditar} />
             </section>
           ))}
         </div>
@@ -325,7 +331,7 @@ export function VisitasCalendario({
   )
 }
 
-function LinhasDoDia({ visitas }: { visitas: VisitaLinha[] }) {
+function LinhasDoDia({ visitas, podeEditar }: { visitas: VisitaLinha[]; podeEditar: boolean }) {
   if (visitas.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 px-4 py-6 text-center">
@@ -358,6 +364,7 @@ function LinhasDoDia({ visitas }: { visitas: VisitaLinha[] }) {
           </div>
 
           <StatusBadge status={v.status} />
+          {podeEditar && <AcoesVisita visita={v} />}
         </div>
       ))}
     </div>
@@ -370,7 +377,7 @@ function LinhasDoDia({ visitas }: { visitas: VisitaLinha[] }) {
  * com menos de 1h de diferença ganham a marca de conflito — o motor não deixa
  * mais criar assim, então o que aparecer aqui é dado antigo ou marcação manual.
  */
-function PorImovel({ visitas, hoje }: { visitas: VisitaLinha[]; hoje: Date }) {
+function PorImovel({ visitas, hoje, podeEditar }: { visitas: VisitaLinha[]; hoje: Date; podeEditar: boolean }) {
   const grupos = useMemo(() => {
     const ativas = visitas.filter(
       (v) => new Date(v.scheduled_at) >= hoje && ['agendada', 'confirmada'].includes(v.status)
@@ -452,6 +459,7 @@ function PorImovel({ visitas, hoje }: { visitas: VisitaLinha[]; hoje: Date }) {
                     </p>
                   </div>
                   <StatusBadge status={v.status} />
+                  {podeEditar && <AcoesVisita visita={v} />}
                 </div>
               ))}
             </div>

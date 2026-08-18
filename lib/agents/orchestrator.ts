@@ -46,7 +46,8 @@ Regras, em ordem de prioridade:
 5. contact_roles inclui 'inquilino_ativo' E fala de boleto, pagamento, contrato, reajuste,
    manutenção ou rescisão → suporte
 6. Menciona reservar, "quero esse imóvel", proposta, enviar documentos → closer
-7. Menciona agendar, visitar, marcar horário, conhecer o imóvel → agendamento
+7. Menciona agendar, visitar, marcar horário, conhecer o imóvel, OU remarcar, adiar,
+   desmarcar ou cancelar uma visita → agendamento
 8. Sem intent definido, ou procurando imóvel para comprar/alugar → sdr
 9. Ambiguidade → sdr
 

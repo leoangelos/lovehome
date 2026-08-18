@@ -33,6 +33,7 @@ import {
 } from '@/lib/agenda/fuso'
 import { DURACAO_VISITA_MIN, escolherCorretor, gerarSlotsEquipe } from '@/lib/agenda/slots'
 import { carregarEquipeParaImovel, type CorretorDaEquipe } from '@/lib/agenda/equipe'
+import { cancelarVisita, listarVisitasDoContato, reagendarVisita } from '@/lib/agenda/visitas'
 import type OpenAI from 'openai'
 
 type Tool = OpenAI.ChatCompletionTool
@@ -84,6 +85,54 @@ como livre. Exige cadastro completo — se não houver, chame request_registrati
         },
       },
       required: ['property_reference', 'scheduled_at'],
+    },
+  },
+}
+
+export const listMyVisitsTool: Tool = {
+  type: 'function',
+  function: {
+    name: 'list_my_visits',
+    description: `Lista as visitas futuras já marcadas desta pessoa (imóvel, horário, corretor). Chame ANTES de
+cancelar ou remarcar, para saber de qual visita ela está falando — e confirme com ela quando houver mais de uma.`,
+    parameters: { type: 'object', properties: {} },
+  },
+}
+
+export const cancelVisitTool: Tool = {
+  type: 'function',
+  function: {
+    name: 'cancel_visit',
+    description: `Cancela uma visita marcada desta pessoa. O horário fica livre para outras pessoas na hora.
+Só chame depois que ela confirmar que quer cancelar (e não remarcar).`,
+    parameters: {
+      type: 'object',
+      properties: {
+        visita_id: { type: 'string', description: 'O visita_id devolvido por list_my_visits' },
+        motivo: { type: 'string', description: 'Motivo em uma frase, se a pessoa disse (opcional)' },
+      },
+      required: ['visita_id'],
+    },
+  },
+}
+
+export const rescheduleVisitTool: Tool = {
+  type: 'function',
+  function: {
+    name: 'reschedule_visit',
+    description: `Remarca uma visita existente para outro horário. Move a MESMA visita — o horário antigo é
+liberado automaticamente. Use check_broker_availability antes para oferecer horários livres, e passe
+em scheduled_at o campo \`quando\` escolhido. O corretor pode mudar; a resposta diz quem atende.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        visita_id: { type: 'string', description: 'O visita_id devolvido por list_my_visits' },
+        scheduled_at: {
+          type: 'string',
+          description: 'Novo horário: o campo `quando` de check_broker_availability (ISO 8601 com fuso).',
+        },
+      },
+      required: ['visita_id', 'scheduled_at'],
     },
   },
 }
@@ -249,5 +298,74 @@ export async function handleCreateVisit(
     corretor: contatoDoCorretor(corretor),
     instrucao:
       'Confirme em uma mensagem curta: dia e hora (use `descricao`), imóvel, e QUEM vai receber a pessoa — nome do corretor e telefone (e e-mail, se houver). O cliente precisa saber com quem falar no dia.',
+  }
+}
+
+// ==========================================
+// Cancelar e remarcar — a regra vive em lib/agenda/visitas (o painel usa a
+// mesma). Aqui só se liga o contato da conversa como autor.
+// ==========================================
+
+export async function handleListMyVisits(contactId: string) {
+  const r = await listarVisitasDoContato(contactId)
+  if (!r.ok) return { erro: r.erro }
+  return {
+    visitas: r.visitas,
+    instrucao:
+      r.visitas.length === 0
+        ? 'A pessoa não tem visita futura marcada. Se ela quer marcar, siga o fluxo normal.'
+        : 'Descreva cada visita pelo campo `descricao` e pelo imóvel. Se houver mais de uma, pergunte qual antes de cancelar ou remarcar.',
+  }
+}
+
+export async function handleCancelVisit(contactId: string, params: { visita_id: string; motivo?: string }) {
+  const r = await cancelarVisita({
+    visitaId: params.visita_id,
+    autor: { tipo: 'cliente', contactId },
+    motivo: params.motivo ?? null,
+  })
+  if (!r.ok) return { cancelado: false, erro: r.erro }
+  return {
+    cancelado: true,
+    visita: r.visita,
+    instrucao:
+      'Confirme o cancelamento em uma frase (dia, hora e imóvel) e diga que, se quiser, é só chamar para marcar outra. Não insista em remarcar.',
+  }
+}
+
+export async function handleRescheduleVisit(
+  contactId: string,
+  params: { visita_id: string; scheduled_at: string }
+) {
+  const novo = interpretarDataHora(params.scheduled_at)
+  if (!novo) return { reagendado: false, erro: 'Data inválida. Use o campo `quando` de check_broker_availability.' }
+
+  const r = await reagendarVisita({
+    visitaId: params.visita_id,
+    novoQuando: novo,
+    autor: { tipo: 'cliente', contactId },
+  })
+  if (!r.ok) {
+    return {
+      reagendado: false,
+      erro: r.erro,
+      ...(r.horarios_livres ? { horarios_livres: r.horarios_livres } : {}),
+      instrucao: r.horarios_livres
+        ? `A visita antiga continua valendo até a pessoa escolher um horário livre. Peça desculpa em meia linha e ofereça as alternativas acima. ${INSTRUCAO_HORARIOS}`
+        : 'A visita antiga continua valendo. Explique o motivo e ofereça ajuda.',
+    }
+  }
+  return {
+    reagendado: true,
+    visita: r.visita,
+    horario_anterior: r.anterior,
+    corretor: r.corretor,
+    trocou_corretor: r.trocouCorretor,
+    instrucao:
+      'Confirme em uma mensagem curta: novo dia e hora (use `descricao`), imóvel, e QUEM vai receber — nome e telefone do corretor. ' +
+      (r.trocouCorretor
+        ? 'O corretor MUDOU: diga isso explicitamente. '
+        : '') +
+      'Diga que o horário anterior foi liberado.',
   }
 }

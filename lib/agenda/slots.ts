@@ -246,3 +246,20 @@ export function escolherCorretor<C extends AgendaCorretor>(
   livres.sort((a, b) => visitasNoDia(a) - visitasNoDia(b) || a.nome.localeCompare(b.nome, 'pt-BR'))
   return { corretor: livres[0], motivo: null }
 }
+
+/**
+ * Para REAGENDAR: tira a própria visita da ocupação do corretor dela e do
+ * imóvel. Sem isto, mover de 10h para 11h esbarraria na regra de "1h de
+ * distância" contra si mesma, e o imóvel pareceria ocupado por ela.
+ */
+export function semAPropriaVisita<C extends AgendaCorretor>(
+  corretores: C[],
+  ocupadosImovel: number[],
+  visita: { brokerId: string | null; instanteMs: number }
+): { corretores: C[]; ocupadosImovel: number[] } {
+  const tirar = (lista: number[]) => lista.filter((t) => t !== visita.instanteMs)
+  return {
+    corretores: corretores.map((c) => (c.id === visita.brokerId ? { ...c, ocupados: tirar(c.ocupados) } : c)),
+    ocupadosImovel: tirar(ocupadosImovel),
+  }
+}

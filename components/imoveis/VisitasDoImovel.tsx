@@ -2,6 +2,7 @@ import { CalendarCheck } from 'lucide-react'
 import { StatusBadge } from '@/components/ui/StatusBadge'
 import { rotuloHorario } from '@/lib/agenda/fuso'
 import type { VisitaLinha } from '@/lib/queries/admin'
+import { AcoesVisita } from '@/components/visitas/AcoesVisita'
 
 /* Ocupação deste imóvel: quem vai, quando e com qual corretor.
  *
@@ -13,7 +14,15 @@ import type { VisitaLinha } from '@/lib/queries/admin'
  * quem cadastra o imóvel precisa VER a agenda dele sem sair da ficha. */
 
 /* `agora` vem de fora: componente puro, o "agora" é da página que renderiza. */
-export function VisitasDoImovel({ visitas, agora }: { visitas: VisitaLinha[]; agora: Date }) {
+export function VisitasDoImovel({
+  visitas,
+  agora,
+  podeEditar = false,
+}: {
+  visitas: VisitaLinha[]
+  agora: Date
+  podeEditar?: boolean
+}) {
   const proximas = visitas
     .filter((v) => new Date(v.scheduled_at).getTime() >= agora.getTime() && ['agendada', 'confirmada'].includes(v.status))
     .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
@@ -51,6 +60,7 @@ export function VisitasDoImovel({ visitas, agora }: { visitas: VisitaLinha[]; ag
                 <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{v.corretor ?? 'Sem corretor'}</p>
               </div>
               <StatusBadge status={v.status} />
+              {podeEditar && <AcoesVisita visita={v} />}
             </div>
           ))}
         </div>

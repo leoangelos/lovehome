@@ -34,6 +34,7 @@ import {
   gerarSlotsEquipe,
   gerarSlotsLivres,
   motivoIndisponivel,
+  semAPropriaVisita,
 } from '../lib/agenda/slots'
 import { filtrarElegiveis, normalizarRegiao } from '../lib/agenda/equipe'
 import { validarAgenda, validarRegioes } from '../lib/corretores/salvar'
@@ -227,6 +228,22 @@ function main() {
     const l = gerarSlotsEquipe({ ...p2, dias: 2, maximo: 40 }).map((s) => s.getTime())
     return !l.includes(t15.getTime()) && !l.includes(instanteLocal(2026, 8, 18, 16).getTime()) && l.includes(instanteLocal(2026, 8, 18, 17).getTime())
   })())
+
+  // ================= Reagendar: a própria visita não bloqueia =================
+  console.log('\n--- Reagendar (mover a mesma visita) ---')
+
+  // Renata tem visita às 10h neste imóvel; a pessoa quer mover.
+  const t10 = instanteLocal(2026, 8, 18, 10)
+  const t11 = instanteLocal(2026, 8, 18, 11)
+  const t1030 = instanteLocal(2026, 8, 18, 10, 30)
+  const equipeAntes = { corretores: [{ ...renata, ocupados: [t10.getTime()] }, diego], ocupadosImovel: [t10.getTime()] }
+  ok('slots consecutivos não conflitam: 10h → 11h passa mesmo sem tirar a própria', escolherCorretor(t11, { agora, ...equipeAntes }, 'renata').corretor?.id === 'renata')
+  ok('fora da hora cheia (painel, 10h30) a própria 10h bloqueia — corretor e imóvel', escolherCorretor(t1030, { agora, ...equipeAntes }, 'renata').corretor === null)
+  const depois = semAPropriaVisita(equipeAntes.corretores, equipeAntes.ocupadosImovel, { brokerId: 'renata', instanteMs: t10.getTime() })
+  ok('semAPropriaVisita tira do corretor e do imóvel', depois.corretores[0].ocupados.length === 0 && depois.ocupadosImovel.length === 0)
+  ok('tirando a própria, 10h30 com a Renata passa', escolherCorretor(t1030, { agora, ...depois }, 'renata').corretor?.id === 'renata')
+  ok('a antiga 10h volta a aparecer como livre (janela liberada)', gerarSlotsEquipe({ agora, dias: 2, ...depois, maximo: 40 }).some((s) => s.getTime() === t10.getTime()))
+  ok('não mexe em outra visita do mesmo corretor', semAPropriaVisita([{ ...renata, ocupados: [t10.getTime(), t11.getTime()] }], [], { brokerId: 'renata', instanteMs: t10.getTime() }).corretores[0].ocupados.length === 1)
 
   // ================= Elegibilidade por bairro =================
   console.log('\n--- Quem pode atender o imóvel ---')

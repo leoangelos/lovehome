@@ -176,6 +176,8 @@ function rotulo(m: LinhaConversa): string {
       return 'Corretor da LoveHome (humano)'
     case 'followup':
       return 'LoveHome (follow-up automático)'
+    case 'sistema':
+      return 'LoveHome (aviso automático do painel)'
     case 'despedida':
     case 'escalonamento':
     case null:

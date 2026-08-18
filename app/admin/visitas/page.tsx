@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { VisitasCalendario } from '@/components/visitas/VisitasCalendario'
 import { listarVisitas, listarCorretores } from '@/lib/queries/admin'
 import { exigirAcesso } from '@/lib/auth/session'
-import { escopoProprio } from '@/lib/auth/permissions'
+import { escopoProprio, pode } from '@/lib/auth/permissions'
 
 export const metadata: Metadata = { title: 'Visitas — LoveHome' }
 export const dynamic = 'force-dynamic'
@@ -30,6 +30,7 @@ export default async function VisitasPage() {
         visitas={visitas}
         corretores={corretores.map((c) => ({ id: c.id, name: c.name }))}
         podeFiltrarPorCorretor={!soAPropria}
+        podeEditar={pode(sessao.role, 'visitas', 'editar')}
       />
     </div>
   )

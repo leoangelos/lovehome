@@ -5,7 +5,7 @@ import { GerenciadorFotos } from '@/components/imoveis/GerenciadorFotos'
 import { VisitasDoImovel } from '@/components/imoveis/VisitasDoImovel'
 import { listarVisitas } from '@/lib/queries/admin'
 import { exigirAcesso } from '@/lib/auth/session'
-import { escopoProprio } from '@/lib/auth/permissions'
+import { escopoProprio, pode } from '@/lib/auth/permissions'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { opcoesProprietarios } from '@/lib/queries/proprietarios'
 import type { Property } from '@/lib/types/domain'
@@ -66,7 +66,7 @@ export default async function EditarImovelPage({
 
       <ImovelForm imovel={imovel} proprietarios={proprietarios} corretores={corretores ?? []} />
 
-      <VisitasDoImovel visitas={visitas} agora={new Date()} />
+      <VisitasDoImovel visitas={visitas} agora={new Date()} podeEditar={pode(sessao.role, 'visitas', 'editar')} />
 
       {/* Fotos ficam FORA do formulário: elas salvam sozinhas, uma ação por vez.
           Dentro do form, arrastar uma foto ficaria pendente até alguém clicar em

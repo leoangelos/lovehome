@@ -35,8 +35,10 @@ export interface EstadoCadastro {
  * confirmar o horario — que e exatamente o comportamento descrito no Exemplo 1.
  */
 export const TOOLS_QUE_EXIGEM_CADASTRO = new Set([
-  // Agendamento
+  // Agendamento — remarcar e a mesma acao de consequencia que marcar.
+  // Cancelar a propria visita nao exige: a posse ja e pelo contato.
   'create_visit',
+  'reschedule_visit',
   // Closer
   'create_deal',
   'request_documents',

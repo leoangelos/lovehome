@@ -9,10 +9,16 @@
 
 import { executeAgent } from './base-agent'
 import {
+  cancelVisitTool,
   checkBrokerAvailabilityTool,
   createVisitTool,
+  handleCancelVisit,
   handleCheckBrokerAvailability,
   handleCreateVisit,
+  handleListMyVisits,
+  handleRescheduleVisit,
+  listMyVisitsTool,
+  rescheduleVisitTool,
 } from './tools/visits'
 import { requestRegistrationFormTool, handleRequestRegistrationForm } from './tools/registration'
 import { searchPropertiesTool, handleSearchProperties } from './tools/properties'
@@ -50,7 +56,17 @@ Se create_visit voltar com agendado=false por horário ocupado, fora da agenda o
 hora, a resposta já traz \`horarios_livres\` alternativos: peça desculpa em meia linha e
 ofereça esses — não repita o horário recusado.
 
-Nunca invente horário disponível. Nunca confirme visita sem create_visit ter retornado sucesso.`
+CANCELAR OU REMARCAR uma visita já marcada:
+- Chame list_my_visits para saber de qual visita a pessoa fala. Com mais de uma, pergunte qual.
+- Se ela quer só cancelar (imprevisto, desistiu): confirme em uma frase e chame cancel_visit.
+  Não insista em remarcar — ofereça uma vez, no máximo, e respeite a resposta.
+- Se ela quer outro dia/horário: chame check_broker_availability, ofereça até 3 opções e,
+  quando ela escolher, chame reschedule_visit com o visita_id e o \`quando\`. É a mesma visita
+  movida — o horário antigo fica livre sozinho, não chame cancel_visit + create_visit.
+- Ao confirmar a remarcação diga o novo horário e quem vai receber a pessoa (a resposta da
+  tool traz o corretor; se ele mudou, avise).
+
+Nunca invente horário disponível. Nunca confirme, cancele ou remarque visita sem a tool ter retornado sucesso.`
 
 export async function runAgendamentoAgent(
   contactId: string,
@@ -61,6 +77,9 @@ export async function runAgendamentoAgent(
   const tools: OpenAI.ChatCompletionTool[] = [
     checkBrokerAvailabilityTool,
     createVisitTool,
+    listMyVisitsTool,
+    cancelVisitTool,
+    rescheduleVisitTool,
     requestRegistrationFormTool,
     searchPropertiesTool,
   ]
@@ -73,6 +92,9 @@ export async function runAgendamentoAgent(
       toolHandlers: {
         check_broker_availability: (args) => handleCheckBrokerAvailability(args as never),
         create_visit: (args) => handleCreateVisit(contactId, args as never),
+        list_my_visits: () => handleListMyVisits(contactId),
+        cancel_visit: (args) => handleCancelVisit(contactId, args as never),
+        reschedule_visit: (args) => handleRescheduleVisit(contactId, args as never),
         request_registration_form: (args) =>
           handleRequestRegistrationForm(contactId, args as never),
         search_properties: (args) => handleSearchProperties(args as never),
