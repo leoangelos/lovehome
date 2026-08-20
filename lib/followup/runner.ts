@@ -19,12 +19,13 @@ import type { ChatHistoryMessage } from '@/lib/types/agents'
 import type { Channel } from '@/lib/channels/types'
 import { registrarUso } from '@/lib/observabilidade/uso'
 import { getConfiguracoes } from '@/lib/config/app'
+import { agoraDescrito, descreverQuando } from '@/lib/agenda/fuso'
 
 /* Estes valores vinham fixos aqui e agora saem de `app_settings` (tela de
    Configurações). O que era comentário virou campo: o silêncio antes de cada
    tentativa, a janela em horário de Brasília e o teto por execução. */
 
-const PROMPT = `Você escreve UMA mensagem curta de WhatsApp para retomar contato com alguém
+export const PROMPT_FOLLOWUP = `Você escreve UMA mensagem curta de WhatsApp para retomar contato com alguém
 que parou de responder a uma imobiliária.
 
 Regras:
@@ -34,7 +35,19 @@ Regras:
 - Sem "espero que esteja bem", sem "passando para lembrar", sem emoji em excesso (no máximo um).
 - Termine com uma pergunta simples e fácil de responder.
 - Não peça cadastro, não mande link, não prometa desconto.
-- Não repita o que já foi dito na última mensagem sua que aparece no histórico.`
+- Não repita o que já foi dito na última mensagem sua que aparece no histórico.
+
+DATAS — regra dura:
+- O contexto diz que dia e hora são AGORA, e descreve qualquer visita marcada com a relação
+  já calculada ("hoje às 10:00", "amanhã (terça, 18/08) às 10:00", "JÁ PASSOU").
+- Use essas descrições EXATAMENTE como estão. NUNCA escreva "hoje", "amanhã" ou dia da semana
+  por conta própria, e NUNCA copie palavra de data de mensagem antiga do histórico — a mensagem
+  antiga dizia "amanhã" sobre um dia que já pode ter chegado ou passado.
+
+Se o contexto disser que há VISITA MARCADA no futuro: a mensagem é uma confirmação gentil da
+visita (dia e hora conforme a descrição dada), nada de "ainda tem interesse".
+Se disser que a visita JÁ PASSOU: pergunte como foi e se a pessoa quer avançar — não confirme
+horário que já era.`
 
 export interface ResultadoFollowup {
   avaliados: number
@@ -181,6 +194,63 @@ export async function rodarFollowups(): Promise<ResultadoFollowup> {
   return { avaliados: candidatos?.length ?? 0, enviados, pulados, foraDeHorario: false }
 }
 
+export interface VisitaParaFollowup {
+  scheduled_at: string
+  status: string
+  codigo: string | null
+  regiao: string | null
+}
+
+export interface FatoVisita {
+  modo: 'pre_visita' | 'pos_visita'
+  frase: string
+}
+
+/**
+ * Decide, EM CÓDIGO, o que o follow-up sabe sobre visitas — o modelo recebe a
+ * conclusão pronta. Pura, para o check exercitar sem banco nem OpenAI.
+ *
+ * - visita futura (agendada/confirmada) → pre_visita: confirmar o horário.
+ * - visita nas últimas 72h que não foi cancelada → pos_visita: perguntar como
+ *   foi. Cobre o caso real: às 19h do dia da visita das 10h, a mensagem certa
+ *   é "como foi hoje de manhã?", não "confirmado para amanhã?".
+ */
+export function avaliarVisitas(
+  visitas: VisitaParaFollowup[],
+  agora: Date = new Date()
+): FatoVisita | null {
+  const relevantes = visitas.filter((v) => !['cancelada', 'no_show'].includes(v.status))
+  if (!relevantes.length) return null
+
+  const futuras = relevantes
+    .filter((v) => new Date(v.scheduled_at) > agora)
+    .sort((a, b) => a.scheduled_at.localeCompare(b.scheduled_at))
+  const passadas = relevantes
+    .filter((v) => new Date(v.scheduled_at) <= agora)
+    .sort((a, b) => b.scheduled_at.localeCompare(a.scheduled_at))
+
+  const rotular = (v: VisitaParaFollowup) =>
+    `${v.codigo ?? 'imóvel'}${v.regiao ? ` (${v.regiao})` : ''}`
+
+  if (futuras.length) {
+    const v = futuras[0]
+    return {
+      modo: 'pre_visita',
+      frase: `VISITA MARCADA: ${rotular(v)}, ${descreverQuando(new Date(v.scheduled_at), agora)}.`,
+    }
+  }
+
+  const v = passadas[0]
+  if (agora.getTime() - new Date(v.scheduled_at).getTime() <= 72 * 3600_000 && v.status !== 'realizada') {
+    return {
+      modo: 'pos_visita',
+      frase: `VISITA QUE JÁ PASSOU: ${rotular(v)}, estava marcada para ${descreverQuando(new Date(v.scheduled_at), agora)}.`,
+    }
+  }
+
+  return null
+}
+
 /** Monta a mensagem a partir do histórico real do agente que atendia. */
 async function montarMensagem(
   contactId: string,
@@ -189,7 +259,7 @@ async function montarMensagem(
 ): Promise<string | null> {
   const supabase = createAdminClient()
 
-  const [{ data: historicos }, { data: qual }] = await Promise.all([
+  const [{ data: historicos }, { data: qual }, { data: visitas }] = await Promise.all([
     supabase
       .from('agent_histories')
       .select('agent, messages')
@@ -201,7 +271,26 @@ async function montarMensagem(
       .select('intent, region, property_type, bedrooms, price_max_cents')
       .eq('contact_id', contactId)
       .maybeSingle(),
+    supabase
+      .from('property_visits')
+      .select('scheduled_at, status, properties ( reference_code, region )')
+      .eq('contact_id', contactId)
+      .gte('scheduled_at', new Date(Date.now() - 7 * 86400_000).toISOString())
+      .order('scheduled_at', { ascending: false })
+      .limit(5),
   ])
+
+  const fatoVisita = avaliarVisitas(
+    (visitas ?? []).map((v) => {
+      const imovel = v.properties as unknown as { reference_code: string; region: string | null } | null
+      return {
+        scheduled_at: v.scheduled_at,
+        status: v.status,
+        codigo: imovel?.reference_code ?? null,
+        regiao: imovel?.region ?? null,
+      }
+    })
+  )
 
   const historico = historicos?.[0]
   const turnos = ((historico?.messages as ChatHistoryMessage[]) ?? []).slice(-8)
@@ -212,6 +301,11 @@ async function montarMensagem(
   if (turnos.length === 0 && !qual?.region && !qual?.price_max_cents) return null
 
   const contexto = [
+    /* O modelo NÃO calcula data: recebe o agora e, se houver visita, a relação
+       já descrita em código ("hoje às 10:00 (esse horário JÁ PASSOU)"). Foi um
+       "amanhã" copiado de mensagem antiga que gerou o follow-up errado real. */
+    `AGORA é ${agoraDescrito()} (horário de São Paulo).`,
+    fatoVisita ? fatoVisita.frase : 'Nenhuma visita marcada ou recente.',
     nome ? `Nome: ${nome}` : null,
     activeAgent ? `Último agente: ${activeAgent}` : null,
     qual?.intent ? `Intenção: ${qual.intent}` : null,
@@ -231,7 +325,7 @@ async function montarMensagem(
     model: 'gpt-4o-mini',
     temperature: 0.7,
     messages: [
-      { role: 'system', content: PROMPT },
+      { role: 'system', content: PROMPT_FOLLOWUP },
       { role: 'user', content: `Contexto:\n${contexto}\n\nÚltimos turnos:\n${conversa}` },
     ],
   })

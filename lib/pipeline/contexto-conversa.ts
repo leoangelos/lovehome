@@ -135,6 +135,13 @@ agente. Isto é o registro do que já foi dito, seu e dos outros. Use para não 
 que já foi respondido e não perder o fio: imóvel já apresentado, horário já discutido,
 dado já informado. Você não precisa repetir o que já foi enviado. Você pode reenviar um
 link que aparece abaixo se fizer sentido — ele já foi enviado pela equipe.
+Se a conversa aponta para exatamente UM imóvel (apresentado, visitado ou em negociação),
+NÃO peça o código: confirme-o com naturalidade, citando o código que está no histórico
+("o apartamento da Vila Mariana, certo?"). Se houver MAIS DE UM em jogo, liste-os e
+pergunte qual.
+CUIDADO com palavras de data das mensagens antigas: um "amanhã" dito ontem já não é
+amanhã. Ao citar dia ou hora, recalcule a partir do AGORA informado acima e dos
+carimbos [dd/mm hh:mm] das mensagens.
 
 ${transcricao.join('\n')}`
 

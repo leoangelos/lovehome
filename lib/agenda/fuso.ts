@@ -174,3 +174,28 @@ export function dataPorExtenso(instante: Date, comDiaSemana = false): string {
   const texto = `${p.dia} de ${MESES_LONGOS[p.mes - 1]} de ${p.ano}`
   return comDiaSemana ? `${DIAS_SEMANA[p.diaSemana]}, ${texto}` : texto
 }
+
+/**
+ * A frase que um texto gerado deve usar ao citar um horário marcado — relação
+ * com o AGORA calculada aqui, no fuso do Brasil, nunca pelo modelo.
+ *
+ * Um follow-up real perguntou "ainda vai conseguir visitar amanhã às 10h?" às
+ * 19h do PRÓPRIO dia da visita: o "amanhã" veio de uma mensagem antiga do
+ * histórico, e nada dizia ao modelo que dia era hoje. Modelo não calcula data
+ * relativa; ele recebe esta frase pronta.
+ */
+export function descreverQuando(alvo: Date, agora: Date = new Date()): string {
+  const dias = Math.round(
+    (Date.parse(`${dataIsoLocal(alvo)}T12:00:00Z`) - Date.parse(`${dataIsoLocal(agora)}T12:00:00Z`)) /
+      86400_000
+  )
+  const p = partesLocais(alvo)
+  const hora = `${String(p.hora).padStart(2, '0')}:${String(p.minuto).padStart(2, '0')}`
+  const passou = alvo.getTime() < agora.getTime()
+
+  if (dias === 0) return `hoje às ${hora}${passou ? ' (esse horário JÁ PASSOU)' : ''}`
+  if (dias === 1) return `amanhã (${DIAS_SEMANA[p.diaSemana]}, ${dois(p.dia)}/${dois(p.mes)}) às ${hora}`
+  if (dias === -1) return `ontem (${DIAS_SEMANA[p.diaSemana]}, ${dois(p.dia)}/${dois(p.mes)}) às ${hora}`
+  const quando = `${DIAS_SEMANA[p.diaSemana]}, ${dois(p.dia)}/${dois(p.mes)} às ${hora}`
+  return dias > 1 ? `${quando} (daqui a ${dias} dias)` : `${quando} (há ${Math.abs(dias)} dias)`
+}

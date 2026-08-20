@@ -1,5 +1,7 @@
 import 'dotenv/config'
 import { createAdminClient } from '../lib/supabase/admin'
+import { avaliarVisitas, PROMPT_FOLLOWUP } from '../lib/followup/runner'
+import { descreverQuando, instanteLocal } from '../lib/agenda/fuso'
 
 /* Exercita o cron de follow-up. Rodar com: npm run check:followup
    (o servidor de dev precisa estar no ar)
@@ -40,6 +42,77 @@ async function main() {
   const vazio = await chamar(segredo)
   ok('autoriza com o segredo correto', vazio.status === 200, `status ${vazio.status}`)
   console.log(`INFO  ${JSON.stringify(vazio.corpo)}`)
+
+  // ================= Datas e visitas: o modelo recebe a conclusão pronta =================
+  console.log('\n--- Follow-up ciente de data e de visita ---')
+
+  /* O caso real que motivou isto: visita marcada para terça 18/08 às 10h; às
+     19h da PRÓPRIA terça o follow-up perguntou "ainda vai conseguir visitar
+     amanhã às 10h?" — o "amanhã" veio de mensagem antiga, e nada dizia ao
+     modelo que dia era hoje. Instantes construídos em fuso local para o teste
+     não depender do relógio da máquina nem do UTC do servidor. */
+  const visita10h = instanteLocal(2026, 8, 18, 10, 0)
+  const terca19h = instanteLocal(2026, 8, 18, 19, 0)
+  const segunda19h = instanteLocal(2026, 8, 17, 19, 0)
+  const sexta = instanteLocal(2026, 8, 21, 9, 0)
+
+  ok(
+    'no dia da visita, à noite: "hoje" e "JÁ PASSOU"',
+    descreverQuando(visita10h, terca19h) === 'hoje às 10:00 (esse horário JÁ PASSOU)',
+    descreverQuando(visita10h, terca19h)
+  )
+  ok(
+    'na véspera: "amanhã" com o dia certo',
+    descreverQuando(visita10h, segunda19h).startsWith('amanhã (terça-feira, 18/08)'),
+    descreverQuando(visita10h, segunda19h)
+  )
+  ok(
+    'dias depois: passado explícito, sem "amanhã"',
+    descreverQuando(visita10h, sexta).includes('há 3 dias'),
+    descreverQuando(visita10h, sexta)
+  )
+  /* Meia-noite de Brasília é 03:00 UTC — se alguém trocar o cálculo para
+     toISOString, este caso quebra na hora. */
+  const quaseMeiaNoite = instanteLocal(2026, 8, 18, 23, 30)
+  ok(
+    'às 23h30 de Brasília ainda é "hoje" (não o dia do UTC)',
+    descreverQuando(instanteLocal(2026, 8, 18, 23, 45), quaseMeiaNoite).startsWith('hoje'),
+    descreverQuando(instanteLocal(2026, 8, 18, 23, 45), quaseMeiaNoite)
+  )
+
+  const visitaTerca = {
+    scheduled_at: visita10h.toISOString(),
+    status: 'agendada',
+    codigo: 'LH-1001',
+    regiao: 'Vila Mariana',
+  }
+
+  const naVespera = avaliarVisitas([visitaTerca], segunda19h)
+  ok('véspera → modo pre_visita', naVespera?.modo === 'pre_visita', JSON.stringify(naVespera))
+  ok('e a frase carrega o "amanhã" calculado', Boolean(naVespera?.frase.includes('amanhã')), naVespera?.frase ?? '')
+
+  const naNoiteDaVisita = avaliarVisitas([visitaTerca], terca19h)
+  /* A asserção do bug: às 19h do dia da visita, o modo é pós-visita — a
+     mensagem certa é "como foi?", nunca "confirmado para amanhã?". */
+  ok('noite do próprio dia → modo pos_visita', naNoiteDaVisita?.modo === 'pos_visita', JSON.stringify(naNoiteDaVisita))
+  ok('e a frase diz que JÁ PASSOU', Boolean(naNoiteDaVisita?.frase.includes('JÁ PASSOU')), naNoiteDaVisita?.frase ?? '')
+  ok('a frase identifica o imóvel', Boolean(naNoiteDaVisita?.frase.includes('LH-1001')))
+
+  const muitoDepois = avaliarVisitas([visitaTerca], instanteLocal(2026, 8, 25, 10, 0))
+  ok('visita de uma semana atrás não vira pós-visita', muitoDepois === null, JSON.stringify(muitoDepois))
+
+  const cancelada = avaliarVisitas([{ ...visitaTerca, status: 'cancelada' }], segunda19h)
+  ok('visita cancelada não gera confirmação', cancelada === null)
+
+  const realizada = avaliarVisitas([{ ...visitaTerca, status: 'realizada' }], terca19h)
+  ok('visita já marcada como realizada não gera pós-visita duplicado', realizada === null)
+
+  ok(
+    'o prompt do follow-up proíbe calcular data por conta própria',
+    /NUNCA escreva "hoje", "amanhã"/.test(PROMPT_FOLLOWUP),
+    'regra de datas ausente do prompt'
+  )
+
 
   if (vazio.corpo.foraDeHorario) {
     console.log('\nFora da janela de 9h–20h em Brasília — o resto do teste não se aplica agora.')
