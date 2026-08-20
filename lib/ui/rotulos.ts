@@ -268,6 +268,7 @@ export const ROTULOS_STATUS: Record<string, string> = {
   alugado: 'Alugado',
   inativo: 'Inativo',
 
+  proposta: 'Proposta',
   em_aprovacao: 'Em aprovação',
   aprovado: 'Aprovado',
   ativo: 'Ativo',

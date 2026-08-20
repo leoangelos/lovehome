@@ -1,5 +1,6 @@
 // ==========================================
-// Aviso ao cliente quando o PAINEL cancela, remarca ou confirma uma visita.
+// Aviso ao cliente disparado pelo PAINEL — visita cancelada/remarcada,
+// proposta aceita ou recusada, negócio desfeito, documento reprovado.
 //
 // Pelo WhatsApp (ou widget) do próprio contato, no canal em que ele conversa.
 // Grava em `messages` como `agent: 'sistema'` — aparece na thread e no
@@ -81,4 +82,27 @@ export async function avisarCliente(contactId: string, texto: string): Promise<R
     console.error('[notificar] aviso ao cliente falhou:', (e as Error).message)
     return { enviado: false, motivo: 'falha no envio pelo canal' }
   }
+}
+
+/** Primeiro nome do contato, com vírgula na frente — para colar em saudação. */
+export async function primeiroNomeDoContato(contactId: string): Promise<string> {
+  const { data } = await createAdminClient().from('contacts').select('name').eq('id', contactId).maybeSingle()
+  const nome = (data?.name ?? '').trim().split(/\s+/)[0]
+  return nome ? `, ${nome}` : ''
+}
+
+/**
+ * Contato "dono" de um cadastro formal — a quem avisar sobre negócio e
+ * documento, que são chaveados por registration_id. Se a pessoa tem mais de um
+ * contato (número novo), o de contato mais recente é o vivo.
+ */
+export async function contatoDoCadastro(registrationId: string): Promise<string | null> {
+  const { data } = await createAdminClient()
+    .from('contacts')
+    .select('id')
+    .eq('registration_id', registrationId)
+    .order('last_contact', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle()
+  return data?.id ?? null
 }

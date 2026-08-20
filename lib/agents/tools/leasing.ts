@@ -33,9 +33,9 @@ export const createDealTool: Tool = {
   type: 'function',
   function: {
     name: 'create_deal',
-    description: `Reserva o imóvel e abre o negócio, depois que a pessoa decidiu qual imóvel quer.
-Isso TRAVA o imóvel para outras pessoas, então só chame quando houver decisão clara —
-não use para "estou pensando" nem para comparar opções.`,
+    description: `Registra a PROPOSTA da pessoa pelo imóvel (compra ou locação) e a coloca na fila
+de avaliação da equipe. NÃO reserva o imóvel — a reserva só acontece se a equipe aceitar.
+Só chame quando houver decisão clara — não use para "estou pensando" nem para comparar opções.`,
     parameters: {
       type: 'object',
       properties: {
@@ -65,7 +65,8 @@ export const requestDocumentsTool: Tool = {
   function: {
     name: 'request_documents',
     description: `Registra quais documentos a pessoa precisa enviar e devolve a lista para você
-comunicar. Chame logo depois de create_deal.`,
+comunicar. Só funciona depois que a proposta foi ACEITA pela equipe (status em_aprovacao) —
+para proposta na fila, a tool recusa.`,
     parameters: {
       type: 'object',
       properties: {
@@ -142,7 +143,7 @@ export async function handleCreateDeal(contactId: string, params: CreateDealPara
     .select('id, deal_type, status')
     .eq('client_registration_id', contato.registration_id)
     .eq('property_id', imovel.id)
-    .in('status', ['em_aprovacao', 'aprovado', 'ativo'])
+    .in('status', ['proposta', 'em_aprovacao', 'aprovado', 'ativo'])
     .limit(1)
     .maybeSingle()
 
@@ -152,16 +153,20 @@ export async function handleCreateDeal(contactId: string, params: CreateDealPara
       ja_existe: true,
       deal_id: existente.id,
       status: existente.status,
-      instrucao: 'Já existe um negócio aberto para esta pessoa neste imóvel. Siga a partir dele.',
+      instrucao:
+        existente.status === 'proposta'
+          ? 'Esta pessoa já tem uma proposta na fila para este imóvel. Diga que ela está registrada e que a equipe retorna — não crie outra.'
+          : 'Já existe um negócio aberto para esta pessoa neste imóvel. Siga a partir dele.',
     }
   }
 
-  /* Imóvel precisa estar disponível. Reservar o que já está reservado é
-     exatamente a situação que trava duas pessoas no mesmo imóvel. */
+  /* Proposta só em imóvel disponível. 'reservado' significa que a proposta de
+     OUTRA pessoa foi aceita — dizer isso com franqueza é melhor do que
+     enfileirar uma proposta que provavelmente não será avaliada. */
   if (imovel.status !== 'disponivel') {
     return {
       criado: false,
-      erro: `Este imóvel está "${imovel.status}" e não pode ser reservado agora.`,
+      erro: `Este imóvel está "${imovel.status}" e não aceita proposta agora.`,
       instrucao: 'Avise a pessoa com franqueza e ofereça buscar outra opção parecida.',
     }
   }
@@ -178,6 +183,10 @@ export async function handleCreateDeal(contactId: string, params: CreateDealPara
 
   const valor = params.valor_proposto_cents ?? precoAnunciado
 
+  /* Nasce 'proposta' e o imóvel NÃO é travado: qualquer valor tirava o imóvel
+     da vitrine antes de o proprietário saber, e uma proposta baixa escondia o
+     imóvel de quem pagaria o anunciado. Quem reserva é o ACEITE, no painel
+     (lib/negocios/propostas.ts) — que também abre a coleta de documentos. */
   const { data: negocio, error } = await supabase
     .from('deals')
     .insert({
@@ -186,7 +195,7 @@ export async function handleCreateDeal(contactId: string, params: CreateDealPara
       client_registration_id: contato.registration_id,
       owner_registration_id: imovel.owner_registration_id,
       broker_id: contato.assigned_broker_id ?? imovel.broker_id,
-      status: 'em_aprovacao',
+      status: 'proposta',
       ...(params.deal_type === 'locacao'
         ? { rent_price_cents: valor, notice_period_days: 30 }
         : {
@@ -199,13 +208,6 @@ export async function handleCreateDeal(contactId: string, params: CreateDealPara
     .single()
 
   if (error) return { criado: false, erro: error.message }
-
-  // Trava o imóvel só depois que o negócio existe: na ordem inversa, uma falha
-  // no insert deixaria o imóvel reservado sem nada por trás.
-  await supabase
-    .from('properties')
-    .update({ status: 'reservado', updated_at: new Date().toISOString() })
-    .eq('id', imovel.id)
 
   await supabase
     .from('contacts')
@@ -221,8 +223,10 @@ export async function handleCreateDeal(contactId: string, params: CreateDealPara
     valor_anunciado: brl(precoAnunciado),
     proposta_abaixo_do_anunciado: valor < precoAnunciado,
     instrucao:
-      'O imóvel está reservado para esta pessoa. Agora peça os documentos com request_documents. ' +
-      'Deixe claro que a equipe analisa e retorna — você não aprova nada.',
+      'Proposta REGISTRADA na fila de avaliação — o imóvel NÃO está reservado. Diga que a proposta ' +
+      'foi registrada e que a equipe vai levar ao proprietário e responder por aqui. NÃO diga ' +
+      '"reservado", NÃO prometa aceite e NÃO peça documento nenhum agora — documentos só depois ' +
+      'do aceite. Não comente se existem outras propostas.',
   }
 }
 
@@ -239,6 +243,18 @@ export async function handleRequestDocuments(params: {
     .maybeSingle()
 
   if (!negocio) return { erro: 'Negócio não encontrado.' }
+
+  /* Documento só depois do aceite. Pedir RG e comprovante para uma proposta
+     que o proprietário pode recusar é coletar dado sensível de um negócio que
+     talvez nunca exista — e o gate é aqui, não no prompt. */
+  if (negocio.status === 'proposta') {
+    return {
+      erro: 'proposta_ainda_nao_aceita',
+      instrucao:
+        'A proposta ainda está em avaliação — NÃO peça documentos. Diga que, se for aceita, ' +
+        'a própria equipe avisa por aqui e explica o que enviar.',
+    }
+  }
 
   const lista = [...(DOCUMENTOS_POR_TIPO[negocio.deal_type] ?? [])]
 

@@ -3,8 +3,7 @@ import { autorizarApi } from '@/lib/auth/session'
 import { escopoProprio } from '@/lib/auth/permissions'
 import { interpretarDataHora } from '@/lib/agenda/fuso'
 import { cancelarVisita, mudarStatusVisita, reagendarVisita, type Autor } from '@/lib/agenda/visitas'
-import { avisarCliente } from '@/lib/agenda/notificar'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { avisarCliente, primeiroNomeDoContato } from '@/lib/notificacoes/cliente'
 
 /* Ações do painel sobre uma visita: confirmar, cancelar, reagendar, marcar
  * realizada ou não compareceu. A regra mora em lib/agenda/visitas — a mesma
@@ -21,12 +20,6 @@ interface Corpo {
   motivo?: string
   scheduled_at?: string
   avisar_cliente?: boolean
-}
-
-async function primeiroNome(contactId: string): Promise<string> {
-  const { data } = await createAdminClient().from('contacts').select('name').eq('id', contactId).maybeSingle()
-  const nome = (data?.name ?? '').trim().split(/\s+/)[0]
-  return nome ? `, ${nome}` : ''
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -51,7 +44,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const r = await cancelarVisita({ visitaId: id, autor, motivo: corpo.motivo ?? null })
     if (!r.ok) return NextResponse.json({ erro: r.erro }, { status: r.status })
     if (avisar) {
-      const nome = await primeiroNome(r.contactId)
+      const nome = await primeiroNomeDoContato(r.contactId)
       const motivo = (corpo.motivo ?? '').trim()
       aviso = await avisarCliente(
         r.contactId,
@@ -72,7 +65,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       return NextResponse.json({ erro: r.erro, horarios_livres: r.horarios_livres ?? [] }, { status: r.status })
     }
     if (avisar) {
-      const nome = await primeiroNome(r.contactId)
+      const nome = await primeiroNomeDoContato(r.contactId)
       const contato = r.corretor.telefone ? ` (${r.corretor.telefone})` : ''
       aviso = await avisarCliente(
         r.contactId,
@@ -90,7 +83,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const r = await mudarStatusVisita({ visitaId: id, status, autor })
     if (!r.ok) return NextResponse.json({ erro: r.erro }, { status: r.status })
     if (avisar && status === 'confirmada') {
-      const nome = await primeiroNome(r.contactId)
+      const nome = await primeiroNomeDoContato(r.contactId)
       const c = r.visita.corretor
       aviso = await avisarCliente(
         r.contactId,

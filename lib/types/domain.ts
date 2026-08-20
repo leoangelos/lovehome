@@ -39,6 +39,7 @@ export type PropertyStatus =
 export type DealType = 'locacao' | 'venda'
 
 export type DealStatus =
+  | 'proposta'
   | 'em_aprovacao'
   | 'aprovado'
   | 'ativo'

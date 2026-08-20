@@ -46,6 +46,13 @@ export function DocumentosFila({
 
     if (!r.ok) return setErro(corpo.erro ?? 'Não foi possível salvar.')
 
+    /* A recusa dispara aviso ao cliente com o motivo — é assim que ele sabe
+       que precisa mandar outro arquivo. Se o aviso não saiu, quem recusou
+       precisa saber para avisar por outro meio. */
+    if (corpo.aviso && !corpo.aviso.enviado) {
+      setErro(`Salvo, mas o aviso ao cliente não saiu (${corpo.aviso.motivo ?? 'sem detalhe'}) — avise por outro meio.`)
+    }
+
     setRecusando(null)
     setMotivo('')
     router.refresh()

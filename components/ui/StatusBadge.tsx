@@ -16,6 +16,7 @@ const ESTILOS: Record<string, string> = {
   inativo: 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500',
 
   // deals.status
+  proposta: 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400',
   em_aprovacao: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   aprovado: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
   ativo: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400',

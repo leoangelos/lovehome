@@ -30,6 +30,7 @@
     "check:links": "tsx scripts/check-links.ts",
     "check:contexto": "tsx scripts/check-contexto.ts",
     "check:agenda": "tsx scripts/check-agenda.ts",
+    "check:propostas": "tsx scripts/check-propostas.ts",
     "check:rag": "tsx scripts/check-rag.ts",
     "check:conversas": "tsx scripts/check-conversas.ts",
     "check:painel": "tsx scripts/check-painel.ts",

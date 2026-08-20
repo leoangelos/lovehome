@@ -241,8 +241,8 @@ stateDiagram-v2
   state "Imóvel" as I {
     [*] --> em_analise: proprietário lista
     em_analise --> disponivel: aprovação humana
-    disponivel --> reservado: create_deal
-    reservado --> disponivel: negócio recusado
+    disponivel --> reservado: proposta ACEITA no painel
+    reservado --> disponivel: negócio desfeito
     reservado --> alugado: contrato ativado (locação)
     reservado --> vendido: contrato ativado (venda)
     alugado --> disponivel: encerramento
@@ -252,10 +252,13 @@ stateDiagram-v2
 ```mermaid
 stateDiagram-v2
   direction LR
-  [*] --> em_aprovacao: create_deal (trava o imóvel)
+  [*] --> proposta: create_deal (imóvel segue na vitrine)
+  proposta --> em_aprovacao: aceite no painel — reserva o imóvel e pede os documentos
+  proposta --> cancelado: proposta recusada (imóvel não muda)
   em_aprovacao --> em_aprovacao: documentos enviados e revisados
   em_aprovacao --> aprovado: aprovação humana — bloqueada enquanto houver documento pendente
-  em_aprovacao --> cancelado: recusa (imóvel volta ao mercado)
+  em_aprovacao --> cancelado: desfeito (imóvel volta à vitrine)
+  aprovado --> cancelado: desfeito — financiamento negado, desistência
   aprovado --> aprovado: contrato gerado (PDF, versionado)
   aprovado --> ativo: assinado enviado + ativação — locação cria assinatura no Asaas
   ativo --> encerramento_solicitado: aviso prévio (validado na tool)
@@ -283,6 +286,9 @@ sequenceDiagram
   WH->>DB: atualiza parcela · guarda payload cru · dedup (event, payment_id)
 ```
 
+- **Proposta não trava o imóvel.** `create_deal` registra a oferta numa **fila por imóvel** e a vitrine segue mostrando ele — várias pessoas podem propor. Quem reserva é o **aceite** no painel (`lib/negocios/propostas.ts`), que também grava `documentos_solicitados` e avisa o cliente pelo canal dele com a lista do que enviar; recusar a proposta avisa o cliente e não mexe no imóvel. `request_documents` **recusa na execução** proposta ainda não aceita — documento sensível só depois de existir negócio de verdade. Ordem da fila: enquanto nenhuma proposta do imóvel foi avaliada, a de maior valor primeiro; depois da primeira avaliação, ordem de chegada. A ordem é guia (a tela marca "avaliar primeiro"), não trava.
+- **Negócio aceito que não anda pode ser desfeito** (documento reprovado de vez, financiamento negado, desistência): exige motivo, o cliente é avisado, o imóvel **volta à vitrine** e as propostas restantes continuam na fila. Contrato `ativo` não se desfaz por aqui — isso é rescisão.
+- **Documento reprovado avisa o cliente com o motivo** pelo canal dele — reprovar é pedir de novo, não encerrar; a fila só anda se a pessoa souber o que reenviar.
 - **Aprovar trava enquanto houver documento em revisão** — a sequência é revisar e só então aprovar. Zero documento apenas avisa: aí é decisão de quem revisa.
 - **Gerar contrato exige negócio aprovado e não sobrescreve** a versão anterior (pode já ter sido enviada ao cliente). O modelo vem de `contract_templates`, editável no painel; placeholder fora do catálogo é **recusado**, porque sairia literal no PDF assinado.
 - **"Vencida" é calculado** comparando a data com hoje, não lido da coluna — o status só vira `atrasado` quando o webhook chega, e antes do deploy nenhum webhook chega.
@@ -490,7 +496,7 @@ Não há framework de teste — os scripts `check:*` são a rede de regressão, 
 Baratos (não chamam a OpenAI):
 
 ```bash
-npm run check:contexto && npm run check:agenda && npm run check:gate && npm run check:contrato && npm run check:templates && npm run check:formularios && npm run check:campos && npm run check:painel && npm run check:canais && npm run check:documentos && npm run check:fotos && npm run check:meta && npm run check:configuracoes && npm run check:asaas && npm run check:pagamentos
+npm run check:contexto && npm run check:agenda && npm run check:propostas && npm run check:gate && npm run check:contrato && npm run check:templates && npm run check:formularios && npm run check:campos && npm run check:painel && npm run check:canais && npm run check:documentos && npm run check:fotos && npm run check:meta && npm run check:configuracoes && npm run check:asaas && npm run check:pagamentos
 ```
 
 Com custo de tokens (rodar quando a área mudou):
@@ -499,7 +505,7 @@ Com custo de tokens (rodar quando a área mudou):
 npm run check:auth && npm run check:pipeline && npm run check:agents && npm run check:proprietario && npm run check:closer && npm run check:suporte && npm run check:conversas && npm run check:copiloto && npm run check:agentes && npm run check:modelos && npm run check:widget && npm run check:busca && npm run check:rag && npm run check:uso && npm run check:webhook && npm run check:followup
 ```
 
-Cada script protege uma decisão específica: `check:contexto` prova que o agente novo enxerga o que o anterior disse (e não reenvia cadastro nem perde o link do imóvel); `check:agenda` roda com `TZ=UTC` de propósito e prova que os horários saem em hora de São Paulo, que consulta e confirmação concordam, que o almoço fica fora, que a união de agendas e a escolha do corretor seguem a regra, que um imóvel não recebe duas visitas no mesmo horário mesmo com corretores diferentes, que ao remarcar a própria visita não bloqueia o novo horário e a janela antiga volta a aparecer livre, e que a validação da ficha recusa agenda impossível; `check:gate` prova que o portão deriva do cadastro real; `check:busca` prova que a semântica não fura o filtro de preço; `check:suporte` prova que o agente pede CPF sem adiantar o valor do aluguel; `check:copiloto` prova que nenhum schema expõe `broker_id`; `check:auth` prova o recorte por carteira; `check:modelos` bate o catálogo de modelos contra a API real; `check:uso` prova que todo ponto pago registra custo.
+Cada script protege uma decisão específica: `check:contexto` prova que o agente novo enxerga o que o anterior disse (e não reenvia cadastro nem perde o link do imóvel); `check:agenda` roda com `TZ=UTC` de propósito e prova que os horários saem em hora de São Paulo, que consulta e confirmação concordam, que o almoço fica fora, que a união de agendas e a escolha do corretor seguem a regra, que um imóvel não recebe duas visitas no mesmo horário mesmo com corretores diferentes, que ao remarcar a própria visita não bloqueia o novo horário e a janela antiga volta a aparecer livre, e que a validação da ficha recusa agenda impossível; `check:propostas` prova a ordem da fila (maior valor antes da primeira avaliação, chegada depois) e, estruturalmente, que proposta não reserva imóvel e que documento só é pedido após o aceite; `check:gate` prova que o portão deriva do cadastro real; `check:busca` prova que a semântica não fura o filtro de preço; `check:suporte` prova que o agente pede CPF sem adiantar o valor do aluguel; `check:copiloto` prova que nenhum schema expõe `broker_id`; `check:auth` prova o recorte por carteira; `check:modelos` bate o catálogo de modelos contra a API real; `check:uso` prova que todo ponto pago registra custo.
 
 ---
 

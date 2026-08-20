@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { ordenarPropostas } from '@/lib/negocios/propostas'
 import type { DealStatus, DealType, DocumentStatus } from '@/lib/types/domain'
 
 /* Leituras das telas de contratos e documentos.
@@ -92,6 +93,11 @@ export interface NegocioLinha {
   tem_assinado: boolean
   signature_method: string | null
   signed_returned_via: string | null
+  /** Motivo de recusa/desfazimento — aparece no cartão de negócio cancelado. */
+  recusa_motivo: string | null
+  /** Posição desta proposta na fila do imóvel (1 = avaliar primeiro). Null fora de 'proposta'. */
+  fila_posicao: number | null
+  fila_tamanho: number | null
 }
 
 export async function listarNegocios(brokerId?: string | null): Promise<NegocioLinha[]> {
@@ -101,7 +107,8 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
     .from('deals')
     .select(
       `id, deal_type, status, created_at, rent_price_cents, sale_price_cents, financing_type,
-       documentos_solicitados, contract_signed_at, broker_id,
+       documentos_solicitados, contract_signed_at, broker_id, property_id,
+       proposta_avaliada_em, recusa_motivo,
        contract_document_url, signed_document_url, signature_method, signed_returned_via,
        properties ( reference_code, region, title ),
        registrations!deals_client_registration_id_fkey ( full_name, cpf_last4 ),
@@ -129,6 +136,31 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
           .eq('status', 'pendente')
       : Promise.resolve({ data: [] }),
   ])
+
+  /* Fila por imóvel: enquanto nenhuma proposta do imóvel foi avaliada, a de
+     maior valor vem primeiro; depois da primeira avaliação, ordem de chegada.
+     Calculado aqui para a tela mostrar "1ª na fila" sem refazer a regra. */
+  const posicaoPorDeal = new Map<string, { posicao: number; total: number }>()
+  const porImovel = new Map<string, typeof data>()
+  for (const d of data ?? []) {
+    if (!d.property_id) continue
+    if (!porImovel.has(d.property_id)) porImovel.set(d.property_id, [])
+    porImovel.get(d.property_id)!.push(d)
+  }
+  for (const linhas of porImovel.values()) {
+    const pendentes = (linhas ?? [])
+      .filter((d) => d.status === 'proposta')
+      .map((d) => ({
+        id: d.id,
+        valorCents: d.deal_type === 'locacao' ? d.rent_price_cents : d.sale_price_cents,
+        createdAt: d.created_at,
+      }))
+    if (pendentes.length === 0) continue
+    const jaAvaliou = (linhas ?? []).some((d) => d.proposta_avaliada_em)
+    ordenarPropostas(pendentes, jaAvaliou).forEach((p, i) =>
+      posicaoPorDeal.set(p.id, { posicao: i + 1, total: pendentes.length })
+    )
+  }
 
   return (data ?? []).map((d) => {
     const imovel = d.properties as unknown as {
@@ -167,6 +199,9 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
       tem_assinado: Boolean(d.signed_document_url),
       signature_method: d.signature_method,
       signed_returned_via: d.signed_returned_via,
+      recusa_motivo: d.recusa_motivo ?? null,
+      fila_posicao: posicaoPorDeal.get(d.id)?.posicao ?? null,
+      fila_tamanho: posicaoPorDeal.get(d.id)?.total ?? null,
     }
   })
 }

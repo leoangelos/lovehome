@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { autorizarApi } from '@/lib/auth/session'
 import { documentoDaCarteira } from '@/lib/auth/carteira'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { avisarCliente, contatoDoCadastro, primeiroNomeDoContato } from '@/lib/notificacoes/cliente'
+import { ROTULO_DOCUMENTO } from '@/lib/ui/rotulos'
 
 /* Revisão humana de documento (PRD 15.2). É o passo que antecede a aprovação do
    negócio: sem documento conferido, não se gera contrato. */
@@ -46,7 +48,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: documento } = await supabase
     .from('documents')
-    .select('id, status')
+    .select('id, status, type, registration_id')
     .eq('id', id)
     .maybeSingle()
 
@@ -64,6 +66,26 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   if (error) return NextResponse.json({ erro: 'Não foi possível salvar.' }, { status: 500 })
 
+  /* Documento reprovado sem o cliente saber é fila parada: ele acha que está
+     tudo enviado e a equipe espera um arquivo que nunca vem. O motivo digitado
+     acima é exatamente o que a pessoa precisa para mandar o certo — vai pelo
+     canal em que ela conversa. Reprovar não desfaz o negócio: é pedir de novo. */
+  let aviso: { enviado: boolean; motivo?: string } | null = null
+  if (corpo.acao === 'rejeitar' && documento.registration_id) {
+    const contactId = await contatoDoCadastro(documento.registration_id)
+    if (contactId) {
+      const nome = await primeiroNomeDoContato(contactId)
+      const rotulo = ROTULO_DOCUMENTO[documento.type] ?? 'documento enviado'
+      aviso = await avisarCliente(
+        contactId,
+        `Oi${nome}! O ${rotulo} que você enviou não passou na conferência: ${corpo.motivo!.trim()}. ` +
+          `Pode mandar outra versão aqui mesmo — foto legível ou PDF.`
+      )
+    } else {
+      aviso = { enviado: false, motivo: 'cadastro sem contato de conversa' }
+    }
+  }
+
   console.log(`[documentos] ${auth.sessao.email} ${corpo.acao}ou o documento ${id}`)
-  return NextResponse.json({ ok: true })
+  return NextResponse.json({ ok: true, aviso })
 }

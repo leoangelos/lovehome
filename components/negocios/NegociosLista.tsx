@@ -42,6 +42,42 @@ export function NegociosLista({
     router.refresh()
   }
 
+  /* Proposta e desfazer usam a rota própria — que também avisa o cliente pelo
+     canal dele. O aviso que falha vira mensagem na tela, não silêncio. */
+  async function decidirProposta(id: string, acao: 'aceitar' | 'recusar' | 'desfazer', motivo?: string) {
+    setErro(null)
+    setOcupado(id)
+
+    const r = await fetch(`/api/admin/deals/${id}/proposta`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acao, motivo }),
+    })
+    const corpo = await r.json().catch(() => ({}))
+    setOcupado(null)
+
+    if (!r.ok) return setErro(corpo.erro ?? 'Não foi possível concluir.')
+    if (corpo.aviso && !corpo.aviso.enviado) {
+      setErro(`Feito, mas o aviso ao cliente não saiu (${corpo.aviso.motivo ?? 'sem detalhe'}) — avise por outro meio.`)
+    }
+    router.refresh()
+  }
+
+  function recusarPropostaComMotivo(id: string) {
+    const motivo = window.prompt('Motivo da recusa (opcional — vai no aviso ao cliente):')
+    if (motivo === null) return
+    void decidirProposta(id, 'recusar', motivo)
+  }
+
+  function desfazerComMotivo(id: string) {
+    const motivo = window.prompt(
+      'Motivo para desfazer (obrigatório — o cliente recebe, e o imóvel volta para a vitrine):'
+    )
+    if (motivo === null) return
+    if (!motivo.trim()) return setErro('Desfazer exige motivo.')
+    void decidirProposta(id, 'desfazer', motivo)
+  }
+
   if (negocios.length === 0) {
     return (
       <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-8 text-center">
@@ -96,12 +132,33 @@ export function NegociosLista({
                     <span className="text-[11px] font-normal text-gray-400">/mês</span>
                   )}
                 </p>
-                <div className="mt-1">
+                <div className="mt-1 flex items-center justify-end gap-1.5">
+                  {n.status === 'proposta' && n.fila_posicao != null && (
+                    <span
+                      className={`text-[11px] px-2 py-0.5 rounded-md ${
+                        n.fila_posicao === 1
+                          ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-400 font-medium'
+                          : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400'
+                      }`}
+                    >
+                      {n.fila_posicao === 1 ? 'avaliar primeiro' : `${n.fila_posicao}ª na fila`}
+                      {(n.fila_tamanho ?? 0) > 1 && ` de ${n.fila_tamanho}`}
+                    </span>
+                  )}
                   <StatusBadge status={n.status} />
                 </div>
               </div>
             </div>
 
+            {n.status === 'cancelado' && n.recusa_motivo && (
+              <p className="mt-3 text-[11px] text-gray-500 dark:text-gray-400">
+                Motivo: {n.recusa_motivo}
+              </p>
+            )}
+
+            {/* Proposta ainda não aceita não tem seção de documentos: eles só
+                são pedidos no aceite — é o desenho do fluxo, não um atraso. */}
+            {n.status !== 'proposta' && (
             <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800">
               <p className="text-[11px] font-medium text-gray-400 dark:text-gray-500 mb-1.5">
                 Documentos
@@ -139,6 +196,33 @@ export function NegociosLista({
                 </div>
               )}
             </div>
+            )}
+
+            {podeAprovar && n.status === 'proposta' && (
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 flex items-center gap-2">
+                <span className="text-[11px] text-gray-400 dark:text-gray-500 mr-auto">
+                  Aceitar reserva o imóvel e pede os documentos ao cliente. Recusar não mexe no imóvel.
+                </span>
+                <button
+                  type="button"
+                  disabled={ocupado === n.id}
+                  onClick={() => decidirProposta(n.id, 'aceitar')}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 disabled:opacity-50"
+                >
+                  <Check className="w-3 h-3" />
+                  Aceitar proposta
+                </button>
+                <button
+                  type="button"
+                  disabled={ocupado === n.id}
+                  onClick={() => recusarPropostaComMotivo(n.id)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+                >
+                  <X className="w-3 h-3" />
+                  Recusar
+                </button>
+              </div>
+            )}
 
             {podeAprovar && n.status === 'em_aprovacao' && (
               <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 flex items-center gap-2">
@@ -169,11 +253,32 @@ export function NegociosLista({
                 <button
                   type="button"
                   disabled={ocupado === n.id}
-                  onClick={() => decidir(n.id, 'rejeitar')}
+                  onClick={() => desfazerComMotivo(n.id)}
                   className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
                 >
                   <X className="w-3 h-3" />
-                  Recusar
+                  Desfazer
+                </button>
+              </div>
+            )}
+
+            {/* Negócio aprovado que não vai adiante (financiamento negado,
+                desistência) também pode ser desfeito — o imóvel volta à
+                vitrine e as propostas da fila continuam lá. 'ativo' não: isso
+                é rescisão. */}
+            {podeAprovar && n.status === 'aprovado' && !n.contract_signed_at && (
+              <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 flex items-center gap-2">
+                <span className="text-[11px] text-gray-400 dark:text-gray-500 mr-auto">
+                  Não vai concluir? Desfazer devolve o imóvel à vitrine e avisa o cliente.
+                </span>
+                <button
+                  type="button"
+                  disabled={ocupado === n.id}
+                  onClick={() => desfazerComMotivo(n.id)}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+                >
+                  <X className="w-3 h-3" />
+                  Desfazer negócio
                 </button>
               </div>
             )}
