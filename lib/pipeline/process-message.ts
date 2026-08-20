@@ -23,7 +23,7 @@ import { runProprietarioAgent } from '@/lib/agents/proprietario'
 import { runCloserAgent } from '@/lib/agents/closer'
 import { generateLeadSummary } from '@/lib/agents/summary'
 import { resolveRegistration } from '@/lib/pipeline/resolve-registration'
-import { carregarContextoConversa } from '@/lib/pipeline/contexto-conversa'
+import { carregarContextoConversa, resumoParaRoteador } from '@/lib/pipeline/contexto-conversa'
 import { dispatchOutgoing } from '@/lib/channels'
 import { isContactBlockedById } from '@/lib/channels/blocklist'
 import type { EstadoCadastro } from '@/lib/pipeline/resolve-registration'
@@ -105,7 +105,18 @@ export async function processMessage(input: ProcessMessageInput): Promise<void> 
 
      O custo é uma chamada de modelo pequeno por mensagem, com prompt curto —
      ordem de USD 0,0001. Registrada em `llm_usage` como 'roteamento'. */
-  const routing = await orchestrate({ message, contact: atual, conversationId, cadastro })
+  /* O contexto é carregado UMA vez e serve ao roteador e ao agente. O roteador
+     recebe a versão compacta: a regra "mantenha o agente enquanto o assunto
+     não mudar" exige saber qual era o assunto — sem isso, uma mensagem curta
+     ("pode ser sexta?") depois de uma despedida caía no SDR por falta de pista. */
+  const contexto = await carregarContextoConversa(atual.id, message, conversationId)
+  const routing = await orchestrate({
+    message,
+    contact: atual,
+    conversationId,
+    cadastro,
+    conversaRecente: resumoParaRoteador(contexto),
+  })
   const agenteRoteado: RoutableAgent = routing.agent
   let routingReasoning = routing.reasoning
   const routingModel = 'gpt-4o-mini'
@@ -139,7 +150,6 @@ export async function processMessage(input: ProcessMessageInput): Promise<void> 
        perguntava "qual imovel?". Carregado aqui, uma vez, e nao no base-agent,
        porque e o pipeline que sabe qual mensagem esta sendo respondida agora
        (as linhas do turno atual ja estao em `messages` e sao descartadas). */
-    const contexto = await carregarContextoConversa(atual.id, message, conversationId)
     agentResponse = await rodarAgente(agenteRoteado, atual.id, message, cadastro, contexto)
   }
 

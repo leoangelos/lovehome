@@ -28,6 +28,9 @@ Perfil do contato:
 - active_agent: {active_agent}
 - has_prior_bot_reply: {has_prior_bot_reply}  (true se o bot já respondeu nesta conversa)
 
+Últimas mensagens da conversa (para julgar se o assunto mudou):
+{conversa_recente}
+
 REGRA CRÍTICA — SAUDAÇÃO NÃO É DESPEDIDA:
 Saudação abre conversa; despedida fecha.
 - "oi", "olá", "bom dia", "boa tarde", "boa noite", "tudo bem?", "e aí" → nunca despedida.
@@ -69,8 +72,10 @@ export async function orchestrate(params: {
   contact: Contact
   conversationId: string
   cadastro: EstadoCadastro
+  /** Resumo compacto (últimas ~5 linhas) — a regra 1 precisa do assunto anterior. */
+  conversaRecente?: string
 }): Promise<OrchestratorResult> {
-  const { message, contact, conversationId, cadastro } = params
+  const { message, contact, conversationId, cadastro, conversaRecente } = params
   const supabase = createAdminClient()
 
   /* Despedida só é válida como resposta a uma troca anterior. Sem esta
@@ -94,6 +99,7 @@ export async function orchestrate(params: {
     .replace('{intent}', contact.intent || 'não identificado')
     .replace('{active_agent}', contact.active_agent || 'nenhum')
     .replace('{has_prior_bot_reply}', String(jaRespondeu))
+    .replace('{conversa_recente}', conversaRecente || 'primeira mensagem — sem conversa anterior')
 
   /* Ver lib/agents/parametros.ts: gpt-5 e os modelos de raciocinio recusam
      `temperature` e `max_tokens` com 400. O roteador roda em TODA mensagem —

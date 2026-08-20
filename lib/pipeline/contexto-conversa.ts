@@ -215,3 +215,20 @@ function quando(iso: string): string {
   // Intl devolve "17/08, 13:20" — a vírgula é ruído.
   return FORMATO_DATA.format(dt).replace(',', '')
 }
+
+/**
+ * Versão compacta para o ROTEADOR: as últimas mensagens em uma linha cada,
+ * curtas. O Orquestrador roda em toda mensagem com modelo pequeno — o bloco
+ * cheio (30 × 800) triplicaria o custo do roteamento para decidir a mesma
+ * coisa. Aqui vão só as 5 últimas, 120 caracteres cada: o suficiente para
+ * julgar "mudou de assunto?" sem pagar por uma transcrição.
+ */
+export function resumoParaRoteador(contexto: ContextoConversa): string {
+  if (!contexto.bloco) return 'primeira mensagem — sem conversa anterior'
+  const linhas = contexto.bloco
+    .split('\n')
+    .filter((l) => l.startsWith('['))
+    .slice(-5)
+    .map((l) => (l.length > 120 ? `${l.slice(0, 120)}…` : l))
+  return linhas.join('\n') || 'primeira mensagem — sem conversa anterior'
+}

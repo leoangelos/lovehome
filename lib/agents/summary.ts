@@ -13,6 +13,7 @@
 
 import { openai } from '@/lib/openai/client'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { agoraDescrito, dataHoraLocal, descreverQuando } from '@/lib/agenda/fuso'
 import { brl } from '@/lib/utils/format'
 import type { ChatHistoryMessage } from '@/lib/types/agents'
 import { registrarUso } from '@/lib/observabilidade/uso'
@@ -37,7 +38,11 @@ restrição de orçamento, objeção levantada, preferência forte). Se não hou
 Regras:
 - Só afirme o que está no histórico. Não deduza renda, estado civil ou intenção não dita.
 - Se um dado importante não apareceu na conversa, diga "não informado" em vez de inventar.
-- Sem bullet points, sem markdown, sem asteriscos.`
+- Sem bullet points, sem markdown, sem asteriscos.
+- DATAS: o corretor lê este briefing depois, às vezes dias depois. NUNCA escreva "hoje",
+  "amanhã" ou "semana que vem": o contexto diz que dia é agora e descreve as visitas com a
+  relação já calculada — copie essas descrições ou escreva a data absoluta (ex.: "terça,
+  18/08 às 10h"). Um "amanhã" do histórico é relativo ao dia em que foi dito, não a hoje.`
 
 export async function generateLeadSummary(params: {
   contactId: string
@@ -46,7 +51,7 @@ export async function generateLeadSummary(params: {
   const supabase = createAdminClient()
   const { contactId, trigger } = params
 
-  const [{ data: contato }, { data: qualificacao }, { data: historicos }] = await Promise.all([
+  const [{ data: contato }, { data: qualificacao }, { data: historicos }, { data: visitas }] = await Promise.all([
     supabase
       .from('contacts')
       .select('id, name, phone, funnel_stage, intent, active_agent, assigned_broker_id, registration_status')
@@ -58,6 +63,13 @@ export async function generateLeadSummary(params: {
       .select('agent, messages, updated_at')
       .eq('contact_id', contactId)
       .order('updated_at', { ascending: false }),
+    supabase
+      .from('property_visits')
+      .select('scheduled_at, status, properties ( reference_code, region )')
+      .eq('contact_id', contactId)
+      .gte('scheduled_at', new Date(Date.now() - 30 * 86400_000).toISOString())
+      .order('scheduled_at', { ascending: false })
+      .limit(3),
   ])
 
   if (!contato) return { gerado: false, motivo: 'contato não encontrado' }
@@ -68,7 +80,8 @@ export async function generateLeadSummary(params: {
   for (const h of historicos ?? []) {
     const msgs = (h.messages as ChatHistoryMessage[]) ?? []
     for (const m of msgs.slice(-20)) {
-      turnos.push(`${m.role === 'user' ? 'Cliente' : `Agente(${h.agent})`}: ${m.content}`)
+      const carimbo = m.created_at ? `[${dataHoraLocal(new Date(m.created_at))}] ` : ''
+      turnos.push(`${carimbo}${m.role === 'user' ? 'Cliente' : `Agente(${h.agent})`}: ${m.content}`)
     }
   }
 
@@ -76,7 +89,17 @@ export async function generateLeadSummary(params: {
     return { gerado: false, motivo: 'sem histórico de conversa para resumir' }
   }
 
+  /* Visitas vêm do BANCO, não do texto: o histórico diz "amanhã às 10h" de um
+     amanhã que já passou; a tabela diz a data real, e descreverQuando entrega a
+     relação com hoje já calculada. */
+  const linhasVisita = (visitas ?? []).map((v) => {
+    const imovel = v.properties as unknown as { reference_code: string; region: string | null } | null
+    return `Visita ${v.status}: ${imovel?.reference_code ?? 'imóvel'}${imovel?.region ? ` (${imovel.region})` : ''} — ${descreverQuando(new Date(v.scheduled_at))}`
+  })
+
   const perfil = [
+    `AGORA é ${agoraDescrito()} (horário de São Paulo)`,
+    ...linhasVisita,
     `Nome: ${contato.name ?? 'não informado'}`,
     `Estágio: ${contato.funnel_stage}`,
     `Intenção: ${contato.intent ?? 'não identificada'}`,

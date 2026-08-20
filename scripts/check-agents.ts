@@ -35,6 +35,21 @@ async function contatoPorNome(nome: string): Promise<Contact> {
 /** Limpa o historico do agente para a conversa comecar do zero a cada execucao. */
 async function limparHistorico(contactId: string) {
   await supabase.from('agent_histories').delete().eq('contact_id', contactId)
+  /* O próprio teste faz o SDR gerar um formulário de cadastro para este lead.
+     Sem apagar aqui, a SEGUNDA execução encontra o pendente e o gate diz
+     'pending' onde o teste espera 'none' — o teste falhava só quando rodado
+     duas vezes, que é o pior jeito de falhar. */
+  await supabase
+    .from('form_submissions')
+    .delete()
+    .eq('contact_id', contactId)
+    .eq('status', 'pendente')
+  /* E o cache do contato, que a execução anterior pode ter deixado 'pending'. */
+  await supabase
+    .from('contacts')
+    .update({ registration_status: 'none', updated_at: new Date().toISOString() })
+    .eq('id', contactId)
+    .is('registration_id', null)
 }
 
 async function main() {

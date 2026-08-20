@@ -1,4 +1,4 @@
-import { montarContextoConversa, type LinhaConversa } from '../lib/pipeline/contexto-conversa'
+import { montarContextoConversa, resumoParaRoteador, type LinhaConversa } from '../lib/pipeline/contexto-conversa'
 import { removerLinksInventados } from '../lib/agents/base-agent'
 
 /* Contexto da conversa inteira entre agentes. Rodar com: npm run check:contexto
@@ -49,6 +49,14 @@ function main() {
   ok('horário em São Paulo (16:10 UTC → 13:10)', ctx.bloco.includes('[17/08 13:10]'), ctx.bloco.split('\n').find((l) => l.startsWith('[')) ?? '')
   ok('link do imóvel entra como URL já enviada', ctx.urlsEnviadas.includes(LINK_IMOVEL), ctx.urlsEnviadas.join(', '))
   ok('cadastro ainda não foi enviado', ctx.cadastroJaEnviado === false)
+
+  // ---- Versão compacta para o roteador ----
+  const resumo = resumoParaRoteador(ctx)
+  ok('o resumo do roteador tem no máximo 5 linhas', resumo.split('\n').length <= 5, `${resumo.split('\n').length} linhas`)
+  ok('cada linha do resumo é curta (≤121 chars)', resumo.split('\n').every((l) => l.length <= 121))
+  ok('o resumo preserva o rótulo de quem falou', resumo.includes('Cliente:'))
+  ok('resumo de contexto vazio diz que é a primeira mensagem',
+    resumoParaRoteador({ conversationId: null, bloco: '', urlsEnviadas: [], cadastroJaEnviado: false, total: 0 }).includes('primeira mensagem'))
 
   // Repetir o link que o SDR mandou não é inventar.
   const resposta = `Claro! É o apê da Vila Mariana, né? ${LINK_IMOVEL}\nTenho quinta às 10h ou sexta de manhã.`
