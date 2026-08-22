@@ -173,9 +173,12 @@ export async function preencherContrato(dealId: string): Promise<ResultadoContra
     notice_period_days: String(negocio.notice_period_days ?? 30),
 
     sale_price: negocio.sale_price_cents ? brl(negocio.sale_price_cents) : '—',
-    down_payment: negocio.down_payment_cents
-      ? brl(negocio.down_payment_cents)
-      : ou(null, 'valor do sinal'),
+    /* Zero explícito é "sem sinal" (à vista, por exemplo) e sai como R$ 0,00.
+       Só NULL — ninguém informou — é lacuna. */
+    down_payment:
+      negocio.down_payment_cents != null
+        ? brl(negocio.down_payment_cents)
+        : ou(null, 'valor do sinal'),
     financing_type: negocio.financing_type
       ? ROTULO_FINANCIAMENTO[negocio.financing_type]
       : ou(null, 'forma de pagamento'),

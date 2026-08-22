@@ -41,7 +41,10 @@ export function ContratoAcoes({ negocio }: { negocio: NegocioLinha }) {
     /* Lacuna não impede gerar — o contrato sai com o campo marcado em maiúsculas
        para quem revisa enxergar. Esconder o aviso é que seria ruim. */
     if (corpo.lacunas?.length) {
-      setAviso(`Contrato gerado com campos faltando: ${corpo.lacunas.join(', ')}.`)
+      setAviso(
+        `Contrato gerado com campos faltando: ${corpo.lacunas.join(', ')}. ` +
+          'Preencha em "Condições do negócio" (ou no cadastro do cliente/imóvel) e gere novamente.'
+      )
     }
     if (corpo.url) window.open(corpo.url, '_blank', 'noopener')
     router.refresh()

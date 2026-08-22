@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { ordenarPropostas } from '../lib/negocios/propostas'
+import { validarCondicoes } from '../lib/negocios/condicoes'
 
 /* Fila de propostas. Rodar com: npm run check:propostas
 
@@ -65,6 +66,27 @@ function main() {
 
   const docsRoute = readFileSync('app/api/admin/documentos/[id]/route.ts', 'utf-8')
   ok('documento reprovado avisa o cliente com o motivo', docsRoute.includes('avisarCliente'))
+
+  // ================= Condições do negócio (o que o contrato lê) =================
+  console.log('\n--- validarCondicoes ---')
+
+  const vVenda = validarCondicoes('venda', { sale_price_cents: 82_000_000, down_payment_cents: 5_000_000, financing_type: 'financiado', itbi_status: 'pendente' }, {})
+  ok('venda válida normaliza os quatro campos', vVenda.ok && Object.keys(vVenda.campos).length === 4)
+  ok('sinal zero é aceito (à vista, sem sinal) — não é lacuna', (() => { const r = validarCondicoes('venda', { down_payment_cents: 0 }, { sale_price_cents: 1 }); return r.ok && r.campos.down_payment_cents === 0 })())
+  ok('sinal maior que o preço falha', !validarCondicoes('venda', { down_payment_cents: 90_000_000 }, { sale_price_cents: 82_000_000 }).ok)
+  ok('sinal compara com o preço NOVO quando os dois mudam', validarCondicoes('venda', { sale_price_cents: 100, down_payment_cents: 90 }, { sale_price_cents: 10 }).ok)
+  ok('venda com preço zero falha', !validarCondicoes('venda', { sale_price_cents: 0 }, {}).ok)
+  ok('forma de pagamento fora do enum falha', !validarCondicoes('venda', { financing_type: 'cheque' as never }, {}).ok)
+  ok('venda nunca grava coluna de locação', !('rent_price_cents' in (validarCondicoes('venda', { rent_price_cents: 100 } as never, {}) as { campos: object }).campos))
+  ok('campo ausente não é tocado; null limpa', (() => { const r = validarCondicoes('venda', { financing_type: null }, {}); return r.ok && r.campos.financing_type === null && !('sale_price_cents' in r.campos) })())
+
+  const vLoc = validarCondicoes('locacao', { rent_price_cents: 350_000, start_date: '2026-09-01', end_date: '2029-08-31', notice_period_days: 30 }, {})
+  ok('locação válida', vLoc.ok && Object.keys(vLoc.campos).length === 4)
+  ok('término antes do início falha', !validarCondicoes('locacao', { start_date: '2026-09-01', end_date: '2026-08-01' }, {}).ok)
+  ok('término compara com o início JÁ gravado', !validarCondicoes('locacao', { end_date: '2026-08-01' }, { start_date: '2026-09-01' }).ok)
+  ok('data fora do formato falha', !validarCondicoes('locacao', { start_date: '01/09/2026' }, {}).ok)
+  ok('aviso prévio de 400 dias falha', !validarCondicoes('locacao', { notice_period_days: 400 }, {}).ok)
+  ok('locação nunca grava coluna de venda', !('sale_price_cents' in (validarCondicoes('locacao', { sale_price_cents: 1 } as never, {}) as { campos: object }).campos))
 
   console.log(process.exitCode ? '\nHouve falhas.' : '\nTudo certo.')
 }

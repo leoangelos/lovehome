@@ -8,6 +8,7 @@ import { brl, cpfMascarado, data as formatarData } from '@/lib/utils/format'
 import { ROTULO_DOCUMENTO } from '@/lib/ui/rotulos'
 import type { NegocioLinha } from '@/lib/queries/negocios'
 import { ContratoAcoes } from './ContratoAcoes'
+import { CondicoesNegocio } from './CondicoesNegocio'
 
 const ROTULO_FINANCIAMENTO: Record<string, string> = {
   a_vista: 'à vista',
@@ -155,6 +156,8 @@ export function NegociosLista({
                 Motivo: {n.recusa_motivo}
               </p>
             )}
+
+            {n.status !== 'cancelado' && <CondicoesNegocio negocio={n} podeEditar={podeAprovar} />}
 
             {/* Proposta ainda não aceita não tem seção de documentos: eles só
                 são pedidos no aceite — é o desenho do fluxo, não um atraso. */}

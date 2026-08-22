@@ -95,6 +95,12 @@ export interface NegocioLinha {
   signed_returned_via: string | null
   /** Motivo de recusa/desfazimento — aparece no cartão de negócio cancelado. */
   recusa_motivo: string | null
+  /** Condições que o contrato lê — editáveis no cartão até a assinatura. */
+  down_payment_cents: number | null
+  itbi_status: string | null
+  start_date: string | null
+  end_date: string | null
+  notice_period_days: number | null
   /** Posição desta proposta na fila do imóvel (1 = avaliar primeiro). Null fora de 'proposta'. */
   fila_posicao: number | null
   fila_tamanho: number | null
@@ -109,6 +115,7 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
       `id, deal_type, status, created_at, rent_price_cents, sale_price_cents, financing_type,
        documentos_solicitados, contract_signed_at, broker_id, property_id,
        proposta_avaliada_em, recusa_motivo,
+       down_payment_cents, itbi_status, start_date, end_date, notice_period_days,
        contract_document_url, signed_document_url, signature_method, signed_returned_via,
        properties ( reference_code, region, title ),
        registrations!deals_client_registration_id_fkey ( full_name, cpf_last4 ),
@@ -200,6 +207,11 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
       signature_method: d.signature_method,
       signed_returned_via: d.signed_returned_via,
       recusa_motivo: d.recusa_motivo ?? null,
+      down_payment_cents: d.down_payment_cents ?? null,
+      itbi_status: d.itbi_status ?? null,
+      start_date: d.start_date ?? null,
+      end_date: d.end_date ?? null,
+      notice_period_days: d.notice_period_days ?? null,
       fila_posicao: posicaoPorDeal.get(d.id)?.posicao ?? null,
       fila_tamanho: posicaoPorDeal.get(d.id)?.total ?? null,
     }
