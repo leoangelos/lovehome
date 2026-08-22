@@ -86,7 +86,9 @@ export interface NegocioLinha {
   corretor: string | null
   financing_type: string | null
   documentos_solicitados: string[]
-  documentos_recebidos: { type: string; status: DocumentStatus }[]
+  documentos_recebidos: { type: string; status: DocumentStatus; via: string | null }[]
+  /** Via assinada que chegou pelo WhatsApp e espera alguém confirmar no cartão. */
+  via_assinada_pendente: { recebida_em: string; via: string } | null
   aprovacao_pendente: boolean
   contract_signed_at: string | null
   tem_contrato: boolean
@@ -116,6 +118,7 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
        documentos_solicitados, contract_signed_at, broker_id, property_id,
        proposta_avaliada_em, recusa_motivo,
        down_payment_cents, itbi_status, start_date, end_date, notice_period_days,
+       signed_candidate_url, signed_candidate_received_at, signed_candidate_via,
        contract_document_url, signed_document_url, signature_method, signed_returned_via,
        properties ( reference_code, region, title ),
        registrations!deals_client_registration_id_fkey ( full_name, cpf_last4 ),
@@ -133,7 +136,7 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
 
   const [{ data: documentos }, { data: aprovacoes }] = await Promise.all([
     ids.length
-      ? supabase.from('documents').select('deal_id, type, status').in('deal_id', ids)
+      ? supabase.from('documents').select('deal_id, type, status, received_via').in('deal_id', ids)
       : Promise.resolve({ data: [] }),
     ids.length
       ? supabase
@@ -196,7 +199,11 @@ export async function listarNegocios(brokerId?: string | null): Promise<NegocioL
       documentos_solicitados: (d.documentos_solicitados ?? []) as string[],
       documentos_recebidos: (documentos ?? [])
         .filter((doc) => doc.deal_id === d.id)
-        .map((doc) => ({ type: doc.type, status: doc.status as DocumentStatus })),
+        .map((doc) => ({ type: doc.type, status: doc.status as DocumentStatus, via: doc.received_via ?? null })),
+      via_assinada_pendente:
+        d.signed_candidate_url && d.signed_candidate_received_at
+          ? { recebida_em: d.signed_candidate_received_at, via: d.signed_candidate_via ?? 'whatsapp' }
+          : null,
       aprovacao_pendente: (aprovacoes ?? []).some((a) => a.deal_id === d.id),
       contract_signed_at: d.contract_signed_at,
       /* Booleano em vez do caminho: o caminho do storage não serve para nada no

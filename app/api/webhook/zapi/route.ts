@@ -20,6 +20,7 @@ import { processMessage } from '@/lib/pipeline/process-message'
 import { enqueueMessage, clearQueueLocks } from '@/lib/debounce/queue'
 import { aguardarEProcessar } from '@/lib/debounce/runner'
 import { receberDocumento, aguardandoDocumentos } from '@/lib/documentos/receber'
+import { negocioAguardandoAssinatura, receberViaAssinada } from '@/lib/leasing/via-assinada'
 import { extractPhoneKey } from '@/lib/utils/phone'
 import type { ZApiWebhookPayload } from '@/lib/types/whatsapp'
 
@@ -171,15 +172,29 @@ export async function POST(req: Request) {
     } else if (incoming.messageType === 'document' && incoming.mediaUrl) {
       /* Baixa AGORA: a URL do Z-API expira, e esperar a janela de debounce
          significaria perder o arquivo que a pessoa acabou de mandar. */
-      const recebido = await receberDocumento({
-        contactId: contact.id,
-        mediaUrl: incoming.mediaUrl,
-        nomeSugerido: incoming.content,
-      })
 
-      conteudo = recebido
-        ? `[Documento recebido: ${incoming.content}] — o arquivo já foi guardado. Confirme o recebimento, diga qual documento é e o que ainda falta. NÃO avalie o conteúdo.`
-        : `[Documento recebido: ${incoming.content}, mas não foi possível guardá-lo] — peça para reenviar.`
+      /* Contrato gerado esperando a via assinada? Então o PDF que chegou é,
+         com toda probabilidade, o contrato de volta — vai para o negócio como
+         candidato, não para a fila de documentos. Quem confirma é uma pessoa,
+         no cartão. Se não for PDF, cai no caminho normal. */
+      const aguardandoAssinatura = await negocioAguardandoAssinatura(contact.id)
+      const viaAssinada = aguardandoAssinatura
+        ? await receberViaAssinada({ dealId: aguardandoAssinatura.id, mediaUrl: incoming.mediaUrl })
+        : null
+
+      if (viaAssinada?.ok) {
+        conteudo = `[Contrato assinado recebido: ${incoming.content}] — o arquivo foi guardado como via assinada do contrato${aguardandoAssinatura?.reference_code ? ` do ${aguardandoAssinatura.reference_code}` : ''} e a equipe vai conferir a assinatura. Confirme o recebimento em uma frase e diga que a equipe confere e retorna. NÃO peça documentos.`
+      } else {
+        const recebido = await receberDocumento({
+          contactId: contact.id,
+          mediaUrl: incoming.mediaUrl,
+          nomeSugerido: incoming.content,
+        })
+
+        conteudo = recebido
+          ? `[Documento recebido: ${incoming.content}] — o arquivo já foi guardado. Confirme o recebimento, diga qual documento é e o que ainda falta. NÃO avalie o conteúdo.`
+          : `[Documento recebido: ${incoming.content}, mas não foi possível guardá-lo] — peça para reenviar.`
+      }
     }
 
     await adminDb.from('messages').insert({

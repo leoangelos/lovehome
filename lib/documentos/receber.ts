@@ -136,6 +136,7 @@ export async function guardarDocumento(params: {
       type: 'outro',
       storage_path: caminho,
       status: 'pendente_revisao',
+      received_via: 'whatsapp',
     })
     .select('id')
     .single()

@@ -238,11 +238,25 @@ export async function handleRequestDocuments(params: {
 
   const { data: negocio } = await supabase
     .from('deals')
-    .select('id, deal_type, status')
+    .select('id, deal_type, status, contract_document_url')
     .eq('id', params.deal_id)
     .maybeSingle()
 
   if (!negocio) return { erro: 'Negócio não encontrado.' }
+
+  /* Contrato já gerado: a coleta acabou. O que chega agora é a via assinada
+     (tratada pelo webhook), não documento de cadastro. */
+  if (negocio.status === 'aprovado' && negocio.contract_document_url) {
+    return {
+      erro: 'contrato_em_assinatura',
+      instrucao:
+        'A coleta de documentos já terminou — o contrato foi gerado e está em assinatura. NÃO peça documentos. ' +
+        'Se a pessoa mandou o contrato assinado, confirme o recebimento e diga que a equipe confere.',
+    }
+  }
+  if (!['em_aprovacao', 'aprovado'].includes(negocio.status)) {
+    return { erro: 'negocio_sem_coleta', instrucao: `Este negócio está "${negocio.status}" e não está em coleta de documentos. Não peça nada.` }
+  }
 
   /* Documento só depois do aceite. Pedir RG e comprovante para uma proposta
      que o proprietário pode recusar é coletar dado sensível de um negócio que
@@ -275,17 +289,30 @@ export async function handleRequestDocuments(params: {
 
   if (error) return { erro: error.message }
 
-  const rotulos = lista.map((d) =>
+  const rotulo = (d: string) =>
     d === 'outro' && params.precisa_comprovar_financiamento
       ? 'carta de aprovação do financiamento'
       : ROTULO_DOCUMENTO[d]
-  )
+
+  /* O que a equipe JÁ tem — pelo WhatsApp ou anexado no painel porque veio por
+     e-mail — não se pede de novo. Documento reprovado conta como faltando. */
+  const { data: recebidos } = await supabase
+    .from('documents')
+    .select('type, status')
+    .eq('deal_id', negocio.id)
+    .neq('status', 'rejeitado')
+  const jaVieram = new Set((recebidos ?? []).map((d) => d.type))
+  const faltam = lista.filter((d) => !jaVieram.has(d))
 
   return {
-    solicitados: rotulos,
+    solicitados: lista.map(rotulo),
+    ja_recebidos: lista.filter((d) => jaVieram.has(d)).map(rotulo),
+    faltam: faltam.map(rotulo),
     instrucao:
-      'Liste os documentos em frase corrida, não em lista com marcadores. Diga que pode mandar ' +
-      'aqui mesmo pelo WhatsApp, uma foto legível de cada. Não prometa prazo exato de análise.',
+      faltam.length === 0
+        ? 'A equipe já tem todos os documentos — diga isso e NÃO peça nenhum.'
+        : 'Peça SÓ os que estão em `faltam`, em frase corrida, sem marcadores. Diga que pode mandar ' +
+          'aqui mesmo pelo WhatsApp, uma foto legível de cada. Não prometa prazo exato de análise.',
   }
 }
 
@@ -302,6 +329,22 @@ export async function handleConfirmDocumentReceived(
     .single()
 
   if (!contato?.registration_id) return { erro: 'Cadastro não encontrado.' }
+
+  /* Com contrato gerado, um PDF que chega é a via assinada — o webhook já a
+     guardou no negócio. Classificar isso como "RG" criaria documento fantasma. */
+  const { data: etapa } = await supabase
+    .from('deals')
+    .select('status, contract_document_url')
+    .eq('id', params.deal_id)
+    .maybeSingle()
+  if (etapa?.status === 'aprovado' && etapa.contract_document_url) {
+    return {
+      registrado: false,
+      instrucao:
+        'O contrato já foi gerado: o que a pessoa mandou é a via assinada, já guardada para a equipe conferir. ' +
+        'Confirme o recebimento e diga que a equipe confere. NÃO peça documentos.',
+    }
+  }
 
   /* O webhook já baixou e guardou o arquivo quando a mensagem chegou, abrindo
      a linha como 'outro' — a URL de mídia do Z-API expira e não dava para
@@ -346,11 +389,12 @@ export async function handleConfirmDocumentReceived(
 
   const { data: recebidos } = await supabase
     .from('documents')
-    .select('type')
+    .select('type, status')
     .eq('deal_id', params.deal_id)
 
   const pedidos = (negocio?.documentos_solicitados ?? []) as string[]
-  const jaVieram = new Set((recebidos ?? []).map((d) => d.type))
+  // Documento reprovado não conta como recebido — é exatamente o que falta de novo.
+  const jaVieram = new Set((recebidos ?? []).filter((d) => d.status !== 'rejeitado').map((d) => d.type))
   const faltam = pedidos.filter((p) => !jaVieram.has(p)).map((d) => ROTULO_DOCUMENTO[d])
 
   return {

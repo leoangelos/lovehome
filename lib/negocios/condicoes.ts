@@ -16,6 +16,7 @@
 // ==========================================
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { MAX_CENTAVOS } from '@/lib/utils/dinheiro'
 
 export type Resultado = { ok: true } | { ok: false; erro: string; status: number }
 
@@ -36,6 +37,10 @@ export interface EntradaCondicoes {
 }
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/
+
+/* As colunas *_cents são INTEGER: acima de R$ 21.474.836,47 o banco recusa com
+   "out of range" — melhor dizer isso aqui do que devolver erro genérico. */
+const TETO = 'Valor acima do limite do sistema (R$ 21.474.836,47). Confira se digitou centavos a mais.'
 
 function inteiro(v: unknown): number | null | undefined {
   if (v === undefined) return undefined
@@ -59,11 +64,13 @@ export function validarCondicoes(
     const preco = inteiro(entrada.sale_price_cents)
     if (preco !== undefined) {
       if (preco === null || Number.isNaN(preco) || preco <= 0) return { ok: false, erro: 'Valor de venda precisa ser maior que zero.' }
+      if (preco > MAX_CENTAVOS) return { ok: false, erro: TETO }
       campos.sale_price_cents = preco
     }
     const sinal = inteiro(entrada.down_payment_cents)
     if (sinal !== undefined) {
       if (Number.isNaN(sinal) || (sinal !== null && sinal < 0)) return { ok: false, erro: 'Sinal inválido.' }
+      if (sinal !== null && sinal > MAX_CENTAVOS) return { ok: false, erro: TETO }
       const base = (campos.sale_price_cents as number | undefined) ?? atual.sale_price_cents ?? null
       if (sinal !== null && base !== null && sinal > base) return { ok: false, erro: 'O sinal não pode ser maior que o valor de venda.' }
       campos.down_payment_cents = sinal
@@ -86,6 +93,7 @@ export function validarCondicoes(
   const aluguel = inteiro(entrada.rent_price_cents)
   if (aluguel !== undefined) {
     if (aluguel === null || Number.isNaN(aluguel) || aluguel <= 0) return { ok: false, erro: 'Aluguel precisa ser maior que zero.' }
+    if (aluguel > MAX_CENTAVOS) return { ok: false, erro: TETO }
     campos.rent_price_cents = aluguel
   }
   if (entrada.start_date !== undefined) {
@@ -133,7 +141,12 @@ export async function salvarCondicoes(dealId: string, entrada: EntradaCondicoes)
     .from('deals')
     .update({ ...v.campos, updated_at: new Date().toISOString() })
     .eq('id', dealId)
-  if (error) return { ok: false, erro: 'Não foi possível salvar as condições.', status: 500 }
+  if (error) {
+    /* O motivo do Postgres fica no log, não na tela (pode carregar nome de
+       coluna e valor). Sem isto, "não foi possível salvar" era um beco. */
+    console.error('[condicoes] falha ao gravar:', error.code, error.message)
+    return { ok: false, erro: 'Não foi possível salvar as condições.', status: 500 }
+  }
 
   return { ok: true }
 }

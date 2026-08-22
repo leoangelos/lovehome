@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Download, FileSignature, Loader2, Upload } from 'lucide-react'
+import { dataHora } from '@/lib/utils/format'
 import type { NegocioLinha } from '@/lib/queries/negocios'
 
 /* Ciclo do contrato na tela: gerar → baixar → registrar a via assinada → ativar.
@@ -85,6 +86,33 @@ export function ContratoAcoes({ negocio }: { negocio: NegocioLinha }) {
 
     setSubindo(false)
     setArquivo(null)
+    router.refresh()
+  }
+
+  /* Via assinada que chegou pelo WhatsApp: o arquivo já está no negócio, só
+     falta uma pessoa confirmar que é o contrato e que está assinado. */
+  async function abrirCandidata() {
+    setErro(null)
+    setOcupado('candidata')
+    const r = await fetch(`/api/admin/deals/${negocio.id}/via-assinada`)
+    const corpo = await r.json()
+    setOcupado(null)
+    if (!r.ok) return setErro(corpo.erro ?? 'Não foi possível abrir.')
+    window.open(corpo.url, '_blank', 'noopener')
+  }
+
+  async function decidirCandidata(acao: 'confirmar' | 'rejeitar') {
+    if (acao === 'rejeitar' && !confirm('Não é o contrato assinado? O arquivo vai para a fila de Documentos como "outro".')) return
+    setErro(null)
+    setOcupado(acao)
+    const r = await fetch(`/api/admin/deals/${negocio.id}/via-assinada`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ acao, signature_method: metodo }),
+    })
+    const corpo = await r.json().catch(() => ({}))
+    setOcupado(null)
+    if (!r.ok) return setErro(corpo.erro ?? 'Não foi possível concluir.')
     router.refresh()
   }
 
@@ -179,6 +207,55 @@ export function ContratoAcoes({ negocio }: { negocio: NegocioLinha }) {
           </button>
         )}
       </div>
+
+      {negocio.via_assinada_pendente && !negocio.tem_assinado && (
+        <div className="rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50 dark:bg-violet-900/20 p-3 space-y-2">
+          <p className="text-[11px] text-violet-800 dark:text-violet-300">
+            Via assinada recebida pelo {negocio.via_assinada_pendente.via === 'email' ? 'e-mail' : 'WhatsApp'} em{' '}
+            <span className="tnum">{dataHora(negocio.via_assinada_pendente.recebida_em)}</span> — abra o PDF, confira a
+            assinatura e confirme. Nada é registrado até você confirmar.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={carregando('candidata')}
+              onClick={abrirCandidata}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <Download className="w-3 h-3" />
+              Abrir PDF
+            </button>
+            <label className="text-[11px] text-gray-600 dark:text-gray-400">
+              Como assinou
+              <select
+                value={metodo}
+                onChange={(e) => setMetodo(e.target.value as 'manual' | 'govbr')}
+                className="ml-2 px-2 py-1 rounded-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300"
+              >
+                <option value="govbr">gov.br</option>
+                <option value="manual">Manual</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              disabled={carregando('confirmar')}
+              onClick={() => decidirCandidata('confirmar')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white"
+            >
+              {carregando('confirmar') && <Loader2 className="w-3 h-3 animate-spin" />}
+              Confirmar assinatura
+            </button>
+            <button
+              type="button"
+              disabled={carregando('rejeitar')}
+              onClick={() => decidirCandidata('rejeitar')}
+              className="px-2 py-1.5 rounded-lg text-[11px] text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50"
+            >
+              Não é o contrato
+            </button>
+          </div>
+        </div>
+      )}
 
       {negocio.tem_assinado && negocio.signature_method && (
         <p className="text-[11px] text-gray-400 dark:text-gray-500">

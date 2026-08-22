@@ -27,6 +27,7 @@ import { resolveContact, resolveConversation } from '@/lib/channels/identity'
 import { isContactBlocked } from '@/lib/channels/blocklist'
 import { transcribeAudioBuffer, analyzeImageBuffer } from '@/lib/whatsapp/media'
 import { guardarDocumento, aguardandoDocumentos } from '@/lib/documentos/receber'
+import { guardarViaAssinada, negocioAguardandoAssinatura } from '@/lib/leasing/via-assinada'
 import { processMessage } from '@/lib/pipeline/process-message'
 import { enqueueMessage, clearQueueLocks } from '@/lib/debounce/queue'
 import { aguardarEProcessar } from '@/lib/debounce/runner'
@@ -229,16 +230,31 @@ async function tratarMensagem(incoming: IncomingMessage): Promise<string> {
         }
       }
     } else if (incoming.messageType === 'document') {
-      const recebido = await guardarDocumento({
-        contactId: contact.id,
-        bytes: arquivo.buffer,
-        contentType: arquivo.contentType,
-        nomeSugerido: incoming.content,
-      })
+      // Mesma regra do zapi: contrato gerado esperando assinatura → candidato a via assinada.
+      const aguardandoAssinatura = await negocioAguardandoAssinatura(contact.id)
+      const viaAssinada = aguardandoAssinatura
+        ? await guardarViaAssinada({
+            dealId: aguardandoAssinatura.id,
+            bytes: arquivo.buffer,
+            contentType: arquivo.contentType,
+            via: 'whatsapp',
+          })
+        : null
 
-      conteudo = recebido
-        ? `[Documento recebido: ${incoming.content}] — o arquivo já foi guardado. Confirme o recebimento, diga qual documento é e o que ainda falta. NÃO avalie o conteúdo.`
-        : `[Documento recebido: ${incoming.content}, mas não foi possível guardá-lo] — peça para reenviar.`
+      if (viaAssinada?.ok) {
+        conteudo = `[Contrato assinado recebido: ${incoming.content}] — o arquivo foi guardado como via assinada do contrato${aguardandoAssinatura?.reference_code ? ` do ${aguardandoAssinatura.reference_code}` : ''} e a equipe vai conferir a assinatura. Confirme o recebimento em uma frase e diga que a equipe confere e retorna. NÃO peça documentos.`
+      } else {
+        const recebido = await guardarDocumento({
+          contactId: contact.id,
+          bytes: arquivo.buffer,
+          contentType: arquivo.contentType,
+          nomeSugerido: incoming.content,
+        })
+
+        conteudo = recebido
+          ? `[Documento recebido: ${incoming.content}] — o arquivo já foi guardado. Confirme o recebimento, diga qual documento é e o que ainda falta. NÃO avalie o conteúdo.`
+          : `[Documento recebido: ${incoming.content}, mas não foi possível guardá-lo] — peça para reenviar.`
+      }
     }
   }
 

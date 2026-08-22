@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Pencil } from 'lucide-react'
 import { brl, data as formatarData } from '@/lib/utils/format'
+import { paraCentavos, paraTextoReais } from '@/lib/utils/dinheiro'
 import type { NegocioLinha } from '@/lib/queries/negocios'
 
 /* Condições do negócio — o que o contrato vai ler. Fica no cartão, acima das
@@ -24,15 +25,9 @@ const INPUT =
   'w-full px-2.5 py-1.5 text-xs rounded-lg bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 text-gray-700 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-rose-500/30 tnum'
 const ROTULO = 'block text-[11px] text-gray-500 dark:text-gray-400 mb-1'
 
-function reais(cents: number | null): string {
-  return cents == null ? '' : (cents / 100).toFixed(2)
-}
-function centavos(texto: string): number | null {
-  const limpo = texto.replace(/\./g, '').replace(',', '.').trim()
-  if (!limpo) return null
-  const n = Number(limpo)
-  return Number.isFinite(n) ? Math.round(n * 100) : NaN
-}
+/* Texto mostrado e texto lido falam a mesma língua (pt-BR) — ver lib/utils/dinheiro. */
+const reais = paraTextoReais
+const centavos = paraCentavos
 
 /** O que o contrato vai apontar como faltando, a partir do que já está no negócio. */
 export function pendenciasDoContrato(n: NegocioLinha): string[] {
@@ -81,7 +76,7 @@ export function CondicoesNegocio({ negocio, podeEditar }: { negocio: NegocioLinh
           notice_period_days: aviso === '' ? null : Number(aviso),
         }
     if (Object.values(corpo).some((v) => typeof v === 'number' && Number.isNaN(v))) {
-      return setErro('Valor em dinheiro inválido — use só números, ex.: 820000 ou 820000,00.')
+      return setErro('Valor em dinheiro inválido — use números, ex.: 820000 ou 820.000,00.')
     }
 
     setOcupado(true)

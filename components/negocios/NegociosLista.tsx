@@ -9,6 +9,7 @@ import { ROTULO_DOCUMENTO } from '@/lib/ui/rotulos'
 import type { NegocioLinha } from '@/lib/queries/negocios'
 import { ContratoAcoes } from './ContratoAcoes'
 import { CondicoesNegocio } from './CondicoesNegocio'
+import { AnexarDocumento } from './AnexarDocumento'
 
 const ROTULO_FINANCIAMENTO: Record<string, string> = {
   a_vista: 'à vista',
@@ -100,6 +101,7 @@ export function NegociosLista({
 
       {negocios.map((n) => {
         const recebidos = new Map(n.documentos_recebidos.map((d) => [d.type, d.status]))
+        const viaPainel = new Set(n.documentos_recebidos.filter((d) => d.via === 'painel').map((d) => d.type))
         const semDocumento = n.documentos_recebidos.length === 0
         const porConferir = n.documentos_recebidos.filter(
           (d) => d.status === 'pendente_revisao'
@@ -193,9 +195,19 @@ export function NegociosLista({
                       <span key={tipo} className={`text-[11px] px-2 py-0.5 rounded-md ${cor}`}>
                         {ROTULO_DOCUMENTO[tipo] ?? tipo}
                         {sufixo}
+                        {viaPainel.has(tipo) && ' · pelo painel'}
                       </span>
                     )
                   })}
+                </div>
+              )}
+
+              {podeAprovar && ['em_aprovacao', 'aprovado'].includes(n.status) && !n.contract_signed_at && (
+                <div className="mt-2">
+                  <AnexarDocumento
+                    dealId={n.id}
+                    sugeridos={n.documentos_solicitados.filter((t) => !recebidos.has(t))}
+                  />
                 </div>
               )}
             </div>
