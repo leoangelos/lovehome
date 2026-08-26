@@ -3,6 +3,7 @@ import { autorizarApi } from '@/lib/auth/session'
 import { negocioDaCarteira } from '@/lib/auth/carteira'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { criarAssinaturaDoNegocio } from '@/lib/asaas/cobranca'
+import { marcarConvertido } from '@/lib/negocios/funil'
 
 /* Recebimento do contrato assinado (PRD 15.3 e 16).
  *
@@ -124,7 +125,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const { data: negocio } = await supabase
     .from('deals')
-    .select('id, status, deal_type, signed_document_url, property_id, start_date')
+    .select('id, status, deal_type, signed_document_url, property_id, start_date, client_registration_id')
     .eq('id', id)
     .maybeSingle()
 
@@ -166,6 +167,12 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         updated_at: new Date().toISOString(),
       })
       .eq('id', negocio.property_id)
+  }
+
+  /* O cliente fechou: sai de "Em negociação" no Kanban. Na locação, ganha o
+     papel inquilino_ativo — é o que roteia boleto/contrato para o Suporte. */
+  if (negocio.client_registration_id) {
+    await marcarConvertido(negocio.client_registration_id, negocio.deal_type as 'locacao' | 'venda')
   }
 
   /* Locação ativa vira cobrança recorrente no Asaas (PRD 14.3). Vai por

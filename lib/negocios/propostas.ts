@@ -21,6 +21,7 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { avisarCliente, contatoDoCadastro, primeiroNomeDoContato } from '@/lib/notificacoes/cliente'
+import { recuarFunilSeSemNegocioVivo } from '@/lib/negocios/funil'
 import { brl } from '@/lib/utils/format'
 
 export type Resultado<T = unknown> =
@@ -212,6 +213,10 @@ export async function recusarProposta(params: {
     .eq('status', 'proposta')
   if (error) return { ok: false, erro: 'Não foi possível recusar.', status: 500 }
 
+  /* Sem mais nenhum negócio vivo, o Kanban não pode seguir dizendo
+     "em negociação". Quem ainda tem outra proposta continua onde está. */
+  await recuarFunilSeSemNegocioVivo(n.client_registration_id)
+
   const valor = valorDo(n)
   const aviso =
     params.avisarCliente === false
@@ -266,6 +271,8 @@ export async function desfazerNegocio(params: {
     .eq('id', n.id)
     .in('status', ['em_aprovacao', 'aprovado'])
   if (error) return { ok: false, erro: 'Não foi possível desfazer.', status: 500 }
+
+  await recuarFunilSeSemNegocioVivo(n.client_registration_id)
 
   if (n.property_id) {
     await supabase

@@ -142,6 +142,23 @@ function main() {
   ok('validarAnexo recusa docx', !validarAnexo('rg_cnh', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 1000).ok)
   ok('validarAnexo recusa vazio e >10MB', !validarAnexo('rg_cnh', 'application/pdf', 0).ok && !validarAnexo('rg_cnh', 'application/pdf', 11 * 1024 * 1024).ok)
 
+  // ================= Funil acompanha o contrato =================
+  console.log('\n--- Funil e papéis no fechamento ---')
+
+  const funil = readFileSync('lib/negocios/funil.ts', 'utf-8')
+  const ativacao = readFileSync('app/api/admin/deals/[id]/signed-document/route.ts', 'utf-8')
+  const props = readFileSync('lib/negocios/propostas.ts', 'utf-8')
+  ok('ativação do contrato move o cliente para convertido', ativacao.includes('marcarConvertido'))
+  ok("funil.ts grava 'convertido'", funil.includes("funnel_stage: 'convertido'"))
+  ok('locação ativada grava o papel inquilino_ativo (roteia o Suporte)', funil.includes("role: 'inquilino_ativo'"))
+  ok('recusar proposta recua o funil se não sobrou negócio vivo', (() => {
+    const recusa = props.slice(props.indexOf('export async function recusarProposta'), props.indexOf('export async function desfazerNegocio'))
+    return recusa.includes('recuarFunilSeSemNegocioVivo')
+  })())
+  ok('desfazer negócio idem', props.slice(props.indexOf('export async function desfazerNegocio')).includes('recuarFunilSeSemNegocioVivo'))
+  ok("recuo só toca quem está em 'em_negociacao' (não sobrescreve estágio manual)", funil.includes(".eq('funnel_stage', 'em_negociacao')"))
+  ok('recuo só quando NÃO há negócio vivo (proposta na fila segura o estágio)', funil.includes("['proposta', 'em_aprovacao', 'aprovado', 'ativo', 'encerramento_solicitado']"))
+
   console.log(process.exitCode ? '\nHouve falhas.' : '\nTudo certo.')
 }
 
