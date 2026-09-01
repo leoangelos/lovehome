@@ -6,6 +6,7 @@ import { Check, Copy, Globe, Plug, Plus, Trash2, X } from 'lucide-react'
 import { dataHora } from '@/lib/utils/format'
 import type { ConfigNaTela, CampoSecreto } from '@/lib/channels/salvar-config'
 import type { SiteWidget } from '@/lib/channels/sites'
+import type { EnvioCrmLinha } from '@/lib/crm/webhook'
 
 interface Campo {
   chave: string
@@ -45,6 +46,19 @@ const CAMPOS: Record<string, Campo[]> = {
       secreto: true,
     },
   ],
+  crm: [
+    {
+      chave: 'webhookUrl',
+      rotulo: 'URL do seu webhook',
+      ajuda: 'Endpoint do seu CRM que vai receber os leads (POST JSON)',
+    },
+    {
+      chave: 'verifyToken',
+      rotulo: 'Segredo de assinatura',
+      ajuda: 'Você inventa. Cada envio leva HMAC-SHA256 do corpo no header X-Lovehome-Assinatura',
+      secreto: true,
+    },
+  ],
 }
 
 const ROTULO_CANAL: Record<string, string> = {
@@ -52,16 +66,19 @@ const ROTULO_CANAL: Record<string, string> = {
   meta: 'WhatsApp (Meta Cloud API)',
   widget: 'Widget do site',
   asaas: 'Cobrança (Asaas)',
+  crm: 'CRM (webhook de leads)',
 }
 
 export function CanaisPainel({
   configs,
   sites,
+  enviosCrm = [],
   urlBase,
   podeEditar,
 }: {
   configs: ConfigNaTela[]
   sites: SiteWidget[]
+  enviosCrm?: EnvioCrmLinha[]
   urlBase: string
   podeEditar: boolean
 }) {
@@ -115,6 +132,18 @@ export function CanaisPainel({
       return copia
     })
     setAviso('Credenciais salvas. Use "Testar conexão" para conferir antes de contar com elas.')
+    router.refresh()
+  }
+
+  async function reenviarEnvio(id: string) {
+    setErro(null)
+    setAviso(null)
+    setOcupado(`reenvio-${id}`)
+    const r = await fetch(`/api/admin/canais/crm/envios/${id}`, { method: 'POST' })
+    const corpo = await r.json().catch(() => ({}))
+    setOcupado(null)
+    if (!r.ok) return setErro(corpo.erro ?? 'Não foi possível reenviar.')
+    setAviso(corpo.enviado ? `Reenviado — o CRM respondeu ${corpo.http_status}.` : `Reenviado, mas falhou de novo: ${corpo.motivo}.`)
     router.refresh()
   }
 
@@ -262,7 +291,7 @@ export function CanaisPainel({
                     rascunho[c.channel]?.[campo.chave] ??
                     (campo.secreto
                       ? ''
-                      : ((c[campo.chave as 'phoneId' | 'businessId'] as string) ?? ''))
+                      : ((c[campo.chave as 'phoneId' | 'businessId' | 'webhookUrl'] as string) ?? ''))
 
                   return (
                     <div key={campo.chave}>
@@ -300,6 +329,65 @@ export function CanaisPainel({
             )}
 
             {/* ---- Onde apontar o webhook ---- */}
+            {c.channel === 'crm' && (
+              <div className="space-y-2">
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 rounded-lg border border-gray-100 dark:border-gray-800 px-3 py-2">
+                  Enviamos um POST assinado para a sua URL em dois momentos: <strong>lead_novo</strong> (início de
+                  conversa, com nome e telefone quando existirem) e <strong>lead_cadastro_completo</strong> (formulário
+                  preenchido, com nome, e-mail e papéis — <strong>nunca CPF</strong>). Ative a chave ao lado depois de
+                  testar; sem segredo cadastrado, nada é enviado.
+                </p>
+
+                <div>
+                  <p className="text-[11px] font-medium text-gray-400 dark:text-gray-500 mb-1.5">
+                    Últimos envios
+                  </p>
+                  {enviosCrm.length === 0 ? (
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500">
+                      Nenhum envio ainda — eles aparecem aqui com o status que a sua URL respondeu.
+                    </p>
+                  ) : (
+                    <div className="rounded-lg border border-gray-100 dark:border-gray-800 divide-y divide-gray-100 dark:divide-gray-800">
+                      {enviosCrm.map((e) => (
+                        <div key={e.id} className="flex items-center gap-2 px-3 py-2">
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-md tnum flex-shrink-0 ${
+                              e.sucesso
+                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                                : 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                            }`}
+                          >
+                            {e.http_status ?? 'falha'}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs text-gray-700 dark:text-gray-300 truncate">
+                              {e.evento}
+                              {e.lead_nome && ` · ${e.lead_nome}`}
+                            </p>
+                            <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate tnum">
+                              {dataHora(e.ultima_tentativa_em)}
+                              {e.tentativas > 1 && ` · ${e.tentativas} tentativas`}
+                              {!e.sucesso && e.erro && ` · ${e.erro}`}
+                            </p>
+                          </div>
+                          {!e.sucesso && podeEditar && (
+                            <button
+                              type="button"
+                              disabled={ocupado === `reenvio-${e.id}`}
+                              onClick={() => reenviarEnvio(e.id)}
+                              className="text-[11px] px-2.5 py-1 rounded-md border border-gray-200 dark:border-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 flex-shrink-0"
+                            >
+                              {ocupado === `reenvio-${e.id}` ? 'Reenviando…' : 'Reenviar'}
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {c.channel === 'zapi' && (
               <div className="space-y-2">
                 <LinhaCopiavel

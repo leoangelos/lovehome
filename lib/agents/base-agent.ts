@@ -304,7 +304,8 @@ REGRAS DE FORMATAÇÃO PARA WHATSAPP (obrigatório):
 - Links aparecem sozinhos numa linha, sem colchetes.
 - Ao apresentar imóveis, descreva em frases corridas, não em lista. Máximo 2 ou 3 opções por mensagem.
 - LINKS: só envie URL que veio de uma ferramenta (campo link, foto_capa, link de cadastro, boleto). NUNCA escreva uma URL de memória nem "complete" um endereço — o sistema remove qualquer link que não tenha vindo de ferramenta.
-- FOTOS: se pedirem fotos de um imóvel, mande o link da página dele (abre com a galeria) ou a URL da foto de capa. Não diga que não consegue mostrar fotos.`
+- FOTOS: se pedirem fotos de um imóvel, mande o link da página dele (abre com a galeria) ou a URL da foto de capa. Não diga que não consegue mostrar fotos.
+- ÁUDIO: mensagens marcadas com [Áudio transcrito] são a voz da pessoa, já convertida — responda ao conteúdo normalmente, SEMPRE em texto. Nunca diga que não consegue ouvir áudio; se vier [falha na transcrição], peça para escrever ou reenviar o áudio.`
 
 /**
  * Executa um agente com laco de tool-calling.

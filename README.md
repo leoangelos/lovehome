@@ -4,6 +4,8 @@ Plataforma de **atendimento e gestão imobiliária via WhatsApp + web**, com age
 
 Nasceu como resposta ao **Tech Challenge FIAP — Fase 5** (*Agente SDR Imobiliário com Inteligência Artificial*), tratado como o primeiro marco de um produto completo: o SDR que qualifica e agenda é a porta de entrada de um ciclo que vai até o contrato assinado e a cobrança mensal.
 
+> **Documentação complementar:** [Arquitetura da solução](docs/ARQUITETURA.md) · [Modelagem de ameaças](docs/MODELAGEM-DE-AMEACAS.md) · [Roteiro do pitch](docs/PITCH.md)
+
 ---
 
 ## Sumário
@@ -291,6 +293,8 @@ sequenceDiagram
 - **O funil acompanha o contrato.** Ativar/concluir move o cliente para **convertido** no Kanban e, na locação, grava o papel `inquilino_ativo` — sem ele a regra que manda inquilino falando de boleto para o Suporte nunca casava com um inquilino real. Recusar proposta ou desfazer negócio recua `em_negociacao → qualificado`, mas só se a pessoa não tem mais nenhum negócio vivo e sem sobrescrever estágio movido à mão (`lib/negocios/funil.ts`).
 - **Contrato assinado devolvido pelo WhatsApp cai no negócio, não na fila de documentos.** Se o contato tem negócio `aprovado` com contrato gerado e sem via assinada, o PDF que chega vira *candidato* (`deals.signed_candidate_*`, bucket `contratos`) e o cartão mostra "Via assinada recebida — Abrir PDF · Confirmar · Não é o contrato"; `contract_signed_at` só é gravado na confirmação humana. O agente é instruído a confirmar o recebimento sem pedir documento, e `request_documents`/`confirm_document_received` recusam nessa etapa (`contrato_em_assinatura`). Detecção determinística por estado do negócio — nome do arquivo e legenda não decidem.
 - **Documento pode ser anexado pelo painel** (cliente mandou por e-mail, entregou em mãos): entra em `documents` com `received_via = 'painel'`, já aprovado se quem anexou marcou "já conferi". `request_documents` passa a devolver só `faltam` — o que a equipe já tem não é pedido pelo WhatsApp; documento reprovado volta a contar como faltando.
+- **Todo lead novo e todo cadastro completo podem ir para o CRM da casa**: a tela de Canais cadastra a URL e o segredo do **webhook de leads** — POST JSON assinado (HMAC no header `X-Lovehome-Assinatura`) em `lead_novo` (início de conversa) e `lead_cadastro_completo` (formulário preenchido/vinculado). Fail-closed (sem segredo, nada sai), timeout curto (CRM lento não atrasa o atendimento) e **payload sem CPF** — `check:crm` prova. A tela mostra os **últimos envios com o status HTTP** que a URL respondeu, e envio que falhou tem **Reenviar**: o mesmo payload guardado, assinado com o segredo atual, para a URL atual — o reparo típico é corrigir a URL e reenviar o que ficou para trás.
+- **Voz no WhatsApp é entrada, por decisão**: áudio do cliente é transcrito (Whisper) e respondido **sempre em texto** — os agentes são instruídos a nunca dizer que "não ouvem áudio" e a pedir reenvio quando a transcrição falha. TTS ficou fora do escopo desta fase.
 - **Documento reprovado avisa o cliente com o motivo** pelo canal dele — reprovar é pedir de novo, não encerrar; a fila só anda se a pessoa souber o que reenviar.
 - **Aprovar trava enquanto houver documento em revisão** — a sequência é revisar e só então aprovar. Zero documento apenas avisa: aí é decisão de quem revisa.
 - **As condições que o contrato lê são editáveis no cartão do negócio** ("Condições do negócio": preço, sinal, forma de pagamento e ITBI na venda; aluguel, início, término e aviso prévio na locação) até a assinatura — e o cartão já aponta a lacuna **antes** de gerar. O gerador avisava "campos faltando: valor do sinal, forma de pagamento" e não havia onde preencher: o `financing_type` só entrava se o agente tivesse capturado na conversa, e o sinal ninguém gravava. Sinal zero explícito é "sem sinal" (sai R$ 0,00); só nulo é lacuna. Validação pura em `lib/negocios/condicoes.ts` (`check:propostas`).
@@ -405,6 +409,8 @@ flowchart LR
 
 ## 10. Segurança e autorização
 
+> O relatório técnico completo, por superfície de ataque (STRIDE) e com os riscos residuais assumidos, está em [docs/MODELAGEM-DE-AMEACAS.md](docs/MODELAGEM-DE-AMEACAS.md).
+
 ```mermaid
 flowchart TD
   REQ([requisição]) --> PX{proxy.ts<br/>sessão válida?}
@@ -500,7 +506,7 @@ Não há framework de teste — os scripts `check:*` são a rede de regressão, 
 Baratos (não chamam a OpenAI):
 
 ```bash
-npm run check:contexto && npm run check:agenda && npm run check:propostas && npm run check:gate && npm run check:contrato && npm run check:templates && npm run check:formularios && npm run check:campos && npm run check:painel && npm run check:canais && npm run check:documentos && npm run check:fotos && npm run check:meta && npm run check:configuracoes && npm run check:asaas && npm run check:pagamentos
+npm run check:contexto && npm run check:agenda && npm run check:propostas && npm run check:crm && npm run check:gate && npm run check:contrato && npm run check:templates && npm run check:formularios && npm run check:campos && npm run check:painel && npm run check:canais && npm run check:documentos && npm run check:fotos && npm run check:meta && npm run check:configuracoes && npm run check:asaas && npm run check:pagamentos
 ```
 
 Com custo de tokens (rodar quando a área mudou):
@@ -530,4 +536,4 @@ Antes de publicar: variáveis do `.env` na Vercel **exceto** `WHATSAPP_ALLOWLIST
 | **3** | Asaas, agente Suporte, pagamentos | concluído (sandbox) |
 | **4** | Modelos de contrato editáveis · formulário configurável · **webhook para CRM · TTS · ingestão de e-mail · vendor de assinatura · Copiloto por WhatsApp** | em andamento |
 
-Especificação completa do produto (schema, prompts, contratos de API, marcos): [`LOVEHOME_AI_PRD.md`](LOVEHOME_AI_PRD.md).
+Especificação completa do produto (schema, prompts, contratos de API, marcos): [`docs/LOVEHOME_AI_PRD.md`](docs/LOVEHOME_AI_PRD.md).

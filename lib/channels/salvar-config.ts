@@ -36,6 +36,8 @@ export type CampoSecreto = keyof typeof COLUNA_SECRETA
 
 export interface EntradaConfig {
   isActive?: boolean
+  /** Só para 'crm': URL do webhook de leads. Não é segredo, mas é validada. */
+  webhookUrl?: string | null
   displayName?: string | null
   phoneId?: string | null
   businessId?: string | null
@@ -54,6 +56,7 @@ export interface SegredoNaTela {
 
 export interface ConfigNaTela {
   channel: IntegrationChannel
+  webhookUrl: string | null
   isActive: boolean
   displayName: string | null
   phoneId: string | null
@@ -86,6 +89,10 @@ const ENV_EQUIVALENTE: Partial<Record<IntegrationChannel, Partial<Record<CampoSe
     accessToken: 'ASAAS_API_KEY',
     verifyToken: 'ASAAS_WEBHOOK_TOKEN',
   },
+  // O segredo assina os POSTs de lead que NÓS enviamos ao CRM da casa.
+  crm: {
+    verifyToken: 'CRM_WEBHOOK_SECRET',
+  },
 }
 
 /**
@@ -110,6 +117,15 @@ export async function salvarConfigCanal(
   if (entrada.phoneId !== undefined) patch.phone_id = entrada.phoneId
   if (entrada.businessId !== undefined) patch.business_id = entrada.businessId
   if (entrada.notes !== undefined) patch.notes = entrada.notes
+  if (entrada.webhookUrl !== undefined) {
+    const url = (entrada.webhookUrl ?? '').trim()
+    /* URL torta gravada aqui só falharia no primeiro lead real, horas depois.
+       http:// fica permitido para teste local; produção usa https. */
+    if (url && !/^https?:\/\/.+/i.test(url)) {
+      return { ok: false, erro: 'A URL do webhook precisa começar com http:// ou https://.' }
+    }
+    patch.webhook_url = url || null
+  }
 
   for (const campo of CAMPOS_SECRETOS) {
     const valor = entrada[campo]
@@ -214,6 +230,7 @@ export async function lerConfigParaTela(channel: IntegrationChannel): Promise<Co
     phoneId: data?.phone_id ?? null,
     businessId: data?.business_id ?? null,
     notes: data?.notes ?? null,
+    webhookUrl: data?.webhook_url ?? null,
     atualizadoEm: data?.updated_at ?? null,
     segredos,
     vindoDoAmbiente,

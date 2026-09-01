@@ -23,6 +23,7 @@ export interface ChannelCredentials {
   clientToken: string | null // Z-API client token
   forwarderSecret: string | null // Segredo pre-compartilhado do forwarder (auth alternativa)
   notificationGroupId: string | null // Grupo de WhatsApp que recebe alerta de escalacao (zapi)
+  webhookUrl: string | null // So 'crm': URL do webhook de leads (nao e segredo)
 }
 
 const CACHE_TTL_MS = 5 * 60 * 1000
@@ -66,6 +67,7 @@ async function loadFromDb(channel: IntegrationChannel): Promise<ChannelCredentia
     clientToken: tryDecryptSecret(data?.client_token_encrypted),
     forwarderSecret: tryDecryptSecret(data?.forwarder_secret_encrypted),
     notificationGroupId: data?.notification_group_id ?? null,
+    webhookUrl: data?.webhook_url ?? null,
   }
 
   return applyEnvFallback(channel, base)
@@ -73,6 +75,13 @@ async function loadFromDb(channel: IntegrationChannel): Promise<ChannelCredentia
 
 /** Completa com variavel de ambiente o que o banco nao forneceu. */
 function applyEnvFallback(channel: IntegrationChannel, creds: ChannelCredentials): ChannelCredentials {
+  if (channel === 'crm') {
+    return {
+      ...creds,
+      webhookUrl: creds.webhookUrl || process.env.CRM_WEBHOOK_URL || null,
+      verifyToken: creds.verifyToken || process.env.CRM_WEBHOOK_SECRET || null,
+    }
+  }
   if (channel === 'meta') {
     return {
       ...creds,

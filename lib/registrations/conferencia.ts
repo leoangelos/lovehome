@@ -10,6 +10,7 @@
 // ==========================================
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { notificarCrm } from '@/lib/crm/webhook'
 
 export type AcaoConferencia = 'vincular' | 'recusar'
 
@@ -139,6 +140,9 @@ export async function decidirConferencia(params: {
     .eq('id', contato.id)
 
   if (erroContato) return { ok: false, erro: 'Não foi possível vincular.', status: 500 }
+
+  // Vincular também é "cadastro completo" para o CRM: o lead ganhou identidade formal.
+  await notificarCrm('lead_cadastro_completo', contato.id)
 
   /* Papéis que a pessoa declarou agora e o cadastro antigo não tinha. Quem se
      cadastrou como interessado e voltou como proprietário precisa dos dois —

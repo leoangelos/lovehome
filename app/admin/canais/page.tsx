@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { CanaisPainel } from '@/components/canais/CanaisPainel'
 import { lerConfigParaTela } from '@/lib/channels/salvar-config'
+import { listarEnviosCrm } from '@/lib/crm/webhook'
 import { listarSites } from '@/lib/channels/sites'
 import { exigirAcesso } from '@/lib/auth/session'
 import { pode } from '@/lib/auth/permissions'
@@ -11,12 +12,14 @@ export const dynamic = 'force-dynamic'
 export default async function CanaisPage() {
   const sessao = await exigirAcesso('canais')
 
-  const [zapi, meta, widget, asaas, sites] = await Promise.all([
+  const [zapi, meta, widget, asaas, crm, sites, enviosCrm] = await Promise.all([
     lerConfigParaTela('zapi'),
     lerConfigParaTela('meta'),
     lerConfigParaTela('widget'),
     lerConfigParaTela('asaas'),
+    lerConfigParaTela('crm'),
     listarSites(),
+    listarEnviosCrm(),
   ])
 
   /* A URL vem do servidor: o webhook precisa do endereço público, e derivar do
@@ -34,8 +37,9 @@ export default async function CanaisPage() {
       </div>
 
       <CanaisPainel
-        configs={[zapi, meta, asaas, widget]}
+        configs={[zapi, meta, asaas, crm, widget]}
         sites={sites}
+        enviosCrm={enviosCrm}
         urlBase={urlBase}
         podeEditar={pode(sessao.role, 'canais', 'editar')}
       />

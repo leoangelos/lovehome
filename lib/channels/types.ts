@@ -8,7 +8,7 @@ export type Channel = 'zapi' | 'meta' | 'widget'
 // Integracoes guardadas em channel_configs que nao sao canal de mensagem.
 // 'asaas' (cobranca) entra na lista de integracoes — mesmo motivo de estar
 // nessa tabela: o segredo do webhook precisa de armazenamento cifrado.
-export type IntegrationChannel = Channel | 'asaas'
+export type IntegrationChannel = Channel | 'asaas' | 'crm'
 
 export type IncomingMessageType = 'text' | 'image' | 'audio' | 'document'
 

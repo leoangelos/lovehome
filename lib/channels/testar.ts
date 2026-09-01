@@ -11,6 +11,7 @@
 // ==========================================
 
 import { getChannelCredentials } from './config'
+import { enviarParaCrm, montarEventoLead } from '@/lib/crm/webhook'
 import { testarAsaas } from '@/lib/asaas/client'
 import type { IntegrationChannel } from './types'
 
@@ -27,6 +28,7 @@ export async function testarCanal(canal: IntegrationChannel): Promise<ResultadoT
   if (canal === 'zapi') return testarZapi()
   if (canal === 'meta') return testarMeta()
   if (canal === 'asaas') return testarAsaas()
+  if (canal === 'crm') return testarCrm()
   if (canal === 'widget') {
     return {
       ok: true,
@@ -113,5 +115,27 @@ async function testarMeta(): Promise<ResultadoTeste> {
     }
   } catch (e) {
     return { ok: false, mensagem: 'Não foi possível falar com a Meta.', detalhe: (e as Error).message }
+  }
+}
+
+async function testarCrm(): Promise<ResultadoTeste> {
+  const creds = await getChannelCredentials('crm')
+  if (!creds.webhookUrl) return { ok: false, mensagem: 'Cadastre a URL do webhook.' }
+  if (!creds.verifyToken) {
+    return { ok: false, mensagem: 'Cadastre o segredo de assinatura — sem ele nenhum lead é enviado.' }
+  }
+
+  /* Evento 'teste' com lead nulo: prova alcance, assinatura e formato sem
+     mandar dado de ninguém. */
+  const r = await enviarParaCrm(montarEventoLead('teste', null, new Date()))
+  if (r.enviado) {
+    return { ok: true, mensagem: 'A URL recebeu o evento de teste assinado.', detalhe: `HTTP ${r.httpStatus}` }
+  }
+  return {
+    ok: false,
+    mensagem: creds.isActive
+      ? `O envio de teste falhou: ${r.motivo}.`
+      : `O envio de teste falhou: ${r.motivo}. A integração também está desativada.`,
+    detalhe: r.httpStatus ? `HTTP ${r.httpStatus}` : undefined,
   }
 }

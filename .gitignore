@@ -39,6 +39,9 @@ yarn-error.log*
 .pnpm-debug.log*
 logs/
 
+# ---- Material do edital (documento da FIAP, não é nosso para redistribuir) ----
+docs/*.pdf
+
 # ---- Sistema operacional e editores ----
 .DS_Store
 Thumbs.db

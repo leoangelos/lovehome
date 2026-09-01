@@ -15,7 +15,7 @@ import type { IntegrationChannel } from '@/lib/channels/types'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 30
 
-const CANAIS: IntegrationChannel[] = ['zapi', 'meta', 'widget', 'asaas']
+const CANAIS: IntegrationChannel[] = ['zapi', 'meta', 'widget', 'asaas', 'crm']
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ channel: string }> }) {
   const auth = await autorizarApi('canais', 'editar')
@@ -41,6 +41,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ ch
       phoneId: corpo.phoneId as string | undefined,
       businessId: corpo.businessId as string | undefined,
       notes: corpo.notes as string | undefined,
+      webhookUrl: corpo.webhookUrl as string | undefined,
       accessToken: corpo.accessToken as string | undefined,
       appSecret: corpo.appSecret as string | undefined,
       verifyToken: corpo.verifyToken as string | undefined,

@@ -10,6 +10,7 @@
 // ==========================================
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { notificarCrm } from '@/lib/crm/webhook'
 import type { Channel } from './types'
 import type { Contact } from '@/lib/types/domain'
 
@@ -105,6 +106,11 @@ export async function resolveContact(params: ResolveParams): Promise<Contact> {
     channel: params.channel,
     external_id: params.externalId,
   })
+
+  /* Lead novo para o CRM da casa (se configurado): início de conversa, com o
+     que se sabe até aqui — nome e telefone quando o canal informa. Best-effort
+     com timeout curto; o atendimento nunca espera o CRM. */
+  await notificarCrm('lead_novo', novo.id)
 
   return novo as Contact
 }

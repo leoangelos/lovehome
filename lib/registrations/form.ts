@@ -9,6 +9,7 @@
 // ==========================================
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { notificarCrm } from '@/lib/crm/webhook'
 import { cpfValido, hashCpf, prepararCpf } from '@/lib/registrations/cpf'
 import { listarCamposAtivos } from '@/lib/registrations/campos'
 import { validarRespostas, type CampoFormulario } from '@/lib/registrations/campos-formato'
@@ -233,6 +234,9 @@ export async function submeterCadastro(
       payload: { roles: papeisUnicos, extra },
     })
     .eq('id', tk.formSubmissionId)
+
+  // Cadastro completo → CRM da casa recebe os dados atualizados (sem CPF).
+  if (tk.contactId) await notificarCrm('lead_cadastro_completo', tk.contactId)
 
   return { ok: true, registrationId: novo.id }
 }
